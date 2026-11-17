@@ -50,6 +50,11 @@ func TestCallers(t *testing.T) {
 		{[]string{"bufWriter.Write"}, []string{
 			at("store/outside.go:12") + ": store.flush: func flush(w io.Writer) { w.Write(nil) }  [via io.Writer]",
 		}, 0},
+		// Promoted: conn has no Open, so a call through OpenCloser reaches its
+		// Close only through the types embedding it.
+		{[]string{"conn.Close"}, []string{
+			at("store/promoted.go:35") + ": store.closeAll: func closeAll(oc OpenCloser) { oc.Close() }  [via store.OpenCloser]",
+		}, 0},
 		// Through a local: assigned after the call, in a loop.
 		{[]string{"handleLater"}, []string{
 			at("store/closures.go:68") + ": (*store.Runner).locals: g()  [through a local]",

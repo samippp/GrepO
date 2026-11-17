@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/types"
 	"maps"
+	"slices"
 	"testing"
 )
 
@@ -90,7 +91,17 @@ func implementsOracle(concrete, interfaces []*types.TypeName, ids idTable) []Imp
 			if !value && !types.Implements(types.NewPointer(tn.Type()), iface) {
 				continue
 			}
-			out = append(out, Implementation{Type: ids.typeID(tn), Interface: ids.typeID(in), PointerOnly: !value})
+			// Methods the type has through an embedded field: what a
+			// selector on *T picks for each of the interface's methods.
+			var promoted []string
+			for m := range iface.Methods() {
+				obj, index, _ := types.LookupFieldOrMethod(types.NewPointer(tn.Type()), true, m.Pkg(), m.Name())
+				if fn, ok := obj.(*types.Func); ok && len(index) > 1 && callKind(fn) != InterfaceCall {
+					promoted = append(promoted, ids.funcID(fn))
+				}
+			}
+			slices.Sort(promoted)
+			out = append(out, Implementation{Type: ids.typeID(tn), Interface: ids.typeID(in), PointerOnly: !value, Promoted: promoted})
 		}
 	}
 	return out

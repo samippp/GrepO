@@ -25,8 +25,7 @@ type Index struct {
 	methods  map[method]string                 // method IDs, interface methods included
 	byCallee map[string][]*graph.FunctionCall  // calls with a known callee
 	impls    map[string][]graph.Implementation // by concrete type ID
-	types    map[string]*graph.Type            // repo types, by ID with type args stripped
-	embedBy  map[string][]string               // type ID, args stripped → repo types embedding it
+	promoted map[string][]graph.Implementation // by the function ID of a method promoted for them
 }
 
 type method struct{ owner, name string }
@@ -44,8 +43,7 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		methods:  map[method]string{},
 		byCallee: map[string][]*graph.FunctionCall{},
 		impls:    map[string][]graph.Implementation{},
-		types:    map[string]*graph.Type{},
-		embedBy:  map[string][]string{},
+		promoted: map[string][]graph.Implementation{},
 	}
 	for _, p := range pg.Packages {
 		ix.names[p.Path] = p.Name
@@ -73,98 +71,11 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 	}
 	for _, im := range cg.Implementations {
 		ix.impls[im.Type] = append(ix.impls[im.Type], im)
-	}
-	for i := range cg.Types {
-		t := &cg.Types[i]
-		ix.types[stripTypeArgs(t.ID)] = t
-		for _, e := range ix.embedded(t) {
-			ix.embedBy[e] = append(ix.embedBy[e], t.ID)
+		for _, id := range im.Promoted {
+			ix.promoted[id] = append(ix.promoted[id], im)
 		}
 	}
 	return ix
-}
-
-// embedded is the types t embeds, args stripped: a struct's embedded fields
-// (pointer or not) and an interface's embedded interfaces. They're spelled
-// as types.TypeString, which is a type's ID, except for local types.
-func (ix *Index) embedded(t *graph.Type) []string {
-	var out []string
-	for _, f := range t.Fields {
-		if f.Embedded {
-			out = append(out, stripTypeArgs(strings.TrimPrefix(f.Type, "*")))
-		}
-	}
-	for _, e := range t.Embeds {
-		out = append(out, stripTypeArgs(e))
-	}
-	return out
-}
-
-// selects returns what x.name means for x of type id: a method's ID or a
-// field's, "" if nothing or several at one depth. As Go selects: the
-// shallowest wins, through embedded types. Outside types have no node, so
-// only their methods the repo calls are known, not what they embed.
-func (ix *Index) selects(id, name string) string {
-	seen := map[string]bool{}
-	for level := []string{stripTypeArgs(id)}; len(level) > 0; {
-		var found, next []string
-		for _, t := range level {
-			if seen[t] {
-				continue
-			}
-			typ := ix.types[t]
-			owner := t
-			if typ != nil {
-				owner = typ.ID // methods are keyed by the ID with type params
-			}
-			if m, ok := ix.methods[method{owner, name}]; ok {
-				found = append(found, m)
-				continue
-			}
-			if typ == nil {
-				continue
-			}
-			for _, f := range typ.Fields {
-				if f.Name == name {
-					found = append(found, f.ID)
-				}
-			}
-			next = append(next, ix.embedded(typ)...)
-		}
-		switch len(found) {
-		case 0:
-		case 1:
-			return found[0]
-		default:
-			return "" // ambiguous: several at the same depth
-		}
-		for _, t := range level {
-			seen[t] = true
-		}
-		level = next
-	}
-	return ""
-}
-
-// promotedTo is the repo types fn is a method of through embedding, at any
-// depth: those embedding its type, unless they declare or embed something
-// of its name that wins.
-func (ix *Index) promotedTo(fn *graph.Function) []string {
-	var out []string
-	seen := map[string]bool{}
-	for queue := ix.embedBy[stripTypeArgs(fn.Owner)]; len(queue) > 0; {
-		t := queue[0]
-		queue = queue[1:]
-		if seen[t] {
-			continue
-		}
-		seen[t] = true
-		if ix.selects(t, fn.Name) == fn.ID {
-			out = append(out, t)
-		}
-		queue = append(queue, ix.embedBy[stripTypeArgs(t)]...)
-	}
-	return out
 }
 
 func (ix *Index) add(f *graph.Function) {
@@ -319,31 +230,25 @@ type Site struct {
 // Callers returns every site that can reach fn: direct calls, then calls
 // through an interface fn's type implements, then uses of fn as a func value
 // (http.HandleFunc("/", h.serve), cobra.Command{RunE: run}); each group by
-// position. For a concrete method, the interfaces are those of its type and
-// of types it's promoted to by embedding, outside types' methods too.
+// position. The interfaces are those fn's type implements and those a type
+// implements with fn, promoted from an embedded field (Implementation.Promoted).
 func (ix *Index) Callers(fn *graph.Function) []Site {
 	var sites []Site
 	for _, c := range ix.byCallee[fn.ID] {
 		sites = append(sites, Site{Kind: Direct, Pos: c.Pos, From: c.Caller, Call: c})
 	}
 	if fn.Owner != "" {
-		owners := []string{fn.Owner}
-		if fn.Receiver != nil { // not an interface method: calls through it are direct
-			owners = append(owners, ix.promotedTo(fn)...)
-		}
 		seen := map[string]bool{} // fn's type and an embedding one can implement the same interface
-		for _, t := range owners {
-			// A call through an embedded interface names the method where it's
-			// declared, (io.Writer).Write, and a type implementing the embedding
-			// interface implements that one too.
-			for _, im := range ix.impls[t] {
-				if seen[im.Interface] {
-					continue
-				}
-				seen[im.Interface] = true
-				for _, c := range ix.byCallee[ix.methods[method{im.Interface, fn.Name}]] {
-					sites = append(sites, Site{Kind: Interface, Pos: c.Pos, From: c.Caller, Via: im.Interface, Call: c})
-				}
+		// A call through an embedded interface names the method where it's
+		// declared, (io.Writer).Write, and a type implementing the embedding
+		// interface implements that one too.
+		for _, im := range slices.Concat(ix.impls[fn.Owner], ix.promoted[fn.ID]) {
+			if seen[im.Interface] {
+				continue
+			}
+			seen[im.Interface] = true
+			for _, c := range ix.byCallee[ix.methods[method{im.Interface, fn.Name}]] {
+				sites = append(sites, Site{Kind: Interface, Pos: c.Pos, From: c.Caller, Via: im.Interface, Call: c})
 			}
 		}
 	}

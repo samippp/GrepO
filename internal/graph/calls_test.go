@@ -128,6 +128,8 @@ func TestCallGraphCalls(t *testing.T) {
 		// Assigned after the call, in the loop; then a param nothing assigns.
 		{Caller: idLocals, Callee: "", Pos: cat("68"), CallKind: DynamicCall, Funcs: []string{storePkg + ".handleLater"}},
 		{Caller: idLocals, Callee: "", Pos: cat("72"), CallKind: DynamicCall},
+		// The promoted methods fixture: a call through OpenCloser.
+		{Caller: storePkg + ".closeAll", Callee: "(" + tOpenCloser + ").Close", Pos: pat("35"), CallKind: InterfaceCall},
 		// Package level: the package calls the blank var's closure; nested's closure calls its own.
 		{Caller: storePkg, Callee: storePkg + "._$1", Pos: cat("51"), CallKind: StaticCall},
 		{Caller: storePkg + ".nested$1", Callee: storePkg + ".nested$1$1", Pos: cat("54"), CallKind: StaticCall},
