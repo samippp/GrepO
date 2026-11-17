@@ -194,6 +194,115 @@ func TestCallers(t *testing.T) {
 	}
 }
 
+// Store.Close promoted by embedding: through an interface only the
+// embedding type implements, at any depth, unless something shallower of
+// that name wins.
+func TestCallersPromoted(t *testing.T) {
+	const (
+		tWrapper = app + ".Wrapper" // embeds *Store, adds Open: implements OpenCloser
+		tOuter   = app + ".Outer"   // embeds Wrapper: OpenCloser too, and Resetter
+		tShadow  = app + ".Shadow"  // embeds Store, declares its own Close
+		tBoth    = app + ".Both"    // embeds Store and Other, both with Close: neither wins
+		tOther   = app + ".Other"
+		tOC      = app + ".OpenCloser"
+		tCloser  = app + ".Closer"   // Store implements it itself
+		tReset   = app + ".Resetter" // Close and Reset
+		tHolder  = app + ".Holder"   // embeds Closer, so implements it
+		idClose  = "(*" + tStore + ").Close"
+	)
+	ptr := func(typ string) *graph.Param { return &graph.Param{Name: "s", Type: "*" + typ} }
+	pg := &graph.PackageGraph{Packages: []graph.Package{{Path: app, Name: "main"}, {Path: store, Name: "store"}}}
+	cg := &graph.CallGraph{
+		Types: []graph.Type{
+			{ID: tStore, Kind: graph.StructType},
+			{ID: tWrapper, Kind: graph.StructType, Fields: []graph.Field{{ID: tWrapper + ".Store", Name: "Store", Type: "*" + tStore, Embedded: true}}},
+			{ID: tOuter, Kind: graph.StructType, Fields: []graph.Field{{ID: tOuter + ".Wrapper", Name: "Wrapper", Type: tWrapper, Embedded: true}}},
+			{ID: tShadow, Kind: graph.StructType, Fields: []graph.Field{{ID: tShadow + ".Store", Name: "Store", Type: tStore, Embedded: true}}},
+			{ID: tBoth, Kind: graph.StructType, Fields: []graph.Field{
+				{ID: tBoth + ".Store", Name: "Store", Type: tStore, Embedded: true},
+				{ID: tBoth + ".Other", Name: "Other", Type: tOther, Embedded: true},
+			}},
+			{ID: tOther, Kind: graph.StructType},
+			{ID: tCloser, Kind: graph.InterfaceType},
+			{ID: tHolder, Kind: graph.StructType, Fields: []graph.Field{{ID: tHolder + ".Closer", Name: "Closer", Type: tCloser, Embedded: true}}},
+		},
+		Functions: []graph.Function{
+			{ID: idClose, Name: "Close", Package: store, Owner: tStore, Receiver: ptr(tStore)},
+			{ID: "(" + tWrapper + ").Open", Name: "Open", Package: app, Owner: tWrapper, Receiver: ptr(tWrapper)},
+			{ID: "(" + tOuter + ").Reset", Name: "Reset", Package: app, Owner: tOuter, Receiver: ptr(tOuter)},
+			{ID: "(" + tShadow + ").Close", Name: "Close", Package: app, Owner: tShadow, Receiver: ptr(tShadow)},
+			{ID: "(" + tShadow + ").Open", Name: "Open", Package: app, Owner: tShadow, Receiver: ptr(tShadow)},
+			{ID: "(" + tOther + ").Close", Name: "Close", Package: app, Owner: tOther, Receiver: ptr(tOther)},
+			{ID: "(" + tOC + ").Close", Name: "Close", Package: app, Owner: tOC},
+			{ID: "(" + tCloser + ").Close", Name: "Close", Package: app, Owner: tCloser},
+			{ID: "(" + tReset + ").Close", Name: "Close", Package: app, Owner: tReset},
+			{ID: idMain, Name: "main", Package: app},
+		},
+		Calls: []graph.FunctionCall{
+			{Caller: idMain, Callee: "(" + tCloser + ").Close", Pos: "main.go:10", CallKind: graph.InterfaceCall},
+			{Caller: idMain, Callee: "(" + tOC + ").Close", Pos: "main.go:11", CallKind: graph.InterfaceCall},
+			{Caller: idMain, Callee: "(" + tReset + ").Close", Pos: "main.go:12", CallKind: graph.InterfaceCall},
+		},
+		Implementations: []graph.Implementation{
+			{Type: tStore, Interface: tCloser, PointerOnly: true},
+			{Type: tWrapper, Interface: tCloser},
+			{Type: tWrapper, Interface: tOC},
+			{Type: tOuter, Interface: tCloser},
+			{Type: tOuter, Interface: tOC},
+			{Type: tOuter, Interface: tReset},
+			{Type: tShadow, Interface: tOC}, // its own Close: not Store's
+			{Type: tShadow, Interface: tCloser},
+			{Type: tHolder, Interface: tCloser},
+		},
+	}
+	ix := New(pg, cg)
+	f, err := ix.Func(idClose, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range ix.Callers(f) {
+		got = append(got, fmt.Sprintf("%s %s via=%s", s.Kind, s.Pos, s.Via))
+	}
+	want := []string{
+		"interface main.go:10 via=" + tCloser, // once, though Wrapper and Outer implement it too
+		"interface main.go:11 via=" + tOC,     // Wrapper's, promoted
+		"interface main.go:12 via=" + tReset,  // Outer's, two levels down
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Callers(%s):\ngot  %q\nwant %q", idClose, got, want)
+	}
+
+	// An interface method's callers are calls through it: a struct embedding
+	// the interface doesn't list them again, as interface sites.
+	f, err = ix.Func("("+tCloser+").Close", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = nil
+	for _, s := range ix.Callers(f) {
+		got = append(got, fmt.Sprintf("%s %s via=%s", s.Kind, s.Pos, s.Via))
+	}
+	if want := []string{"direct main.go:10 via="}; !slices.Equal(got, want) {
+		t.Errorf("Callers(Closer.Close):\ngot  %q\nwant %q", got, want)
+	}
+
+	for typ, want := range map[string]string{
+		tStore:   idClose,
+		tWrapper: idClose,
+		tOuter:   idClose,
+		tShadow:  "(" + tShadow + ").Close",
+		tBoth:    "", // ambiguous
+	} {
+		if got := ix.selects(typ, "Close"); got != want {
+			t.Errorf("selects(%s, Close) = %q, want %q", typ, got, want)
+		}
+	}
+	if got := ix.selects(tWrapper, "Store"); got != tWrapper+".Store" {
+		t.Errorf("selects(Wrapper, Store) = %q, want the field", got)
+	}
+}
+
 func TestShort(t *testing.T) {
 	ix := testIndex()
 	for id, want := range map[string]string{
