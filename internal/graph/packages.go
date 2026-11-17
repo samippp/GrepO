@@ -11,7 +11,6 @@ import (
 	"cmp"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/samippp/grepo/internal/load"
 )
@@ -49,11 +48,6 @@ type Edge struct {
 
 // BuildPackageGraph builds res's import graph.
 func BuildPackageGraph(res *load.Result) *PackageGraph {
-	internal := make(map[string]bool, len(res.Packages))
-	for _, p := range res.Packages {
-		internal[p.PkgPath] = true
-	}
-
 	g := &PackageGraph{
 		Module:   res.Module,
 		Root:     filepath.ToSlash(res.Dir),
@@ -83,10 +77,10 @@ func BuildPackageGraph(res *load.Result) *PackageGraph {
 
 		for _, path := range p.Imports {
 			switch {
-			case internal[path]:
+			case res.Repo[path]:
 				pkg.Imports.Internal = append(pkg.Imports.Internal, path)
 				g.Edges = append(g.Edges, Edge{From: p.PkgPath, To: path})
-			case isStdlib(path):
+			case res.Standard[path]:
 				pkg.Imports.Stdlib = append(pkg.Imports.Stdlib, path)
 			default:
 				pkg.Imports.External = append(pkg.Imports.External, path)
@@ -105,13 +99,6 @@ func BuildPackageGraph(res *load.Result) *PackageGraph {
 		return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
 	})
 	return g
-}
-
-// isStdlib reports whether an import path belongs to the standard library.
-// Stdlib paths have no dot in their first element; module paths do.
-func isStdlib(path string) bool {
-	first, _, _ := strings.Cut(path, "/")
-	return !strings.Contains(first, ".")
 }
 
 func rel(root, path string) string {

@@ -13,10 +13,7 @@ import (
 // through JSON first, as they will through the store.
 func TestImplementationsFromSummaries(t *testing.T) {
 	res := loadFixture(t)
-	repo := map[string]bool{}
-	for _, pkg := range res.Packages {
-		repo[pkg.PkgPath] = true
-	}
+	repo := res.Repo
 
 	var summaries []typeSummary
 	var concrete, interfaces []*types.TypeName

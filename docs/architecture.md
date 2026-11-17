@@ -324,6 +324,7 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 - Dependencies: function bodies dropped before type-checking (dependents only need declarations); only their types are kept; errors in them are ignored (dropping bodies leaves unused imports).
 - Each package's export data (`gcexportdata`) is cached next to its graph entry, so unchanged packages are imported from the cache and an edit re-checks only the changed package and its reverse imports.
 - The importer decides what a missing package becomes, so the partial pass (M2c) uses the same path.
+- `Result` passes on what `go list` knows, so later stages don't guess it: `Repo`, the repo's packages (the walk's set), and `Standard`, the standard library's. The package graph splits imports by them: a path without a dot isn't the standard library's when a `replace` gives a module that path (`replace tools => ./tools`). `GoPackages` runs `go list` once more for `Standard`, which `go/packages` doesn't report (caddy: ~0.1–0.2s).
 - Given up: reusing the user's warm `go build` cache, and the Go tooling quirks `go/packages` handles (build tags, cgo files, vendor, `go.work`, overlays) that are now ours to get right through `go list`.
 - To check: per-package errors (cgo especially). Memory on large repos: repo packages' syntax is dropped once walked (Walking during the load).
 - `graph` reads `load.Package`, never `go/packages` (#31). `vta-diff` stays on `go/packages` through `load.GoPackages`, as an independent check.

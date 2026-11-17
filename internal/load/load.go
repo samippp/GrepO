@@ -33,6 +33,10 @@ type Result struct {
 	Module   string // main module path, empty if none was found
 	Packages []*Package
 	Checked  []string // import paths type-checked from source, sorted; the rest came from the store
+
+	// By import path. Repo is the Walk's repo, shared: don't change it.
+	Repo     map[string]bool // the repo's packages: Packages' paths
+	Standard map[string]bool // the standard library's packages loaded with them, as go list says
 }
 
 // Package is one of the repo's packages, type-checked. After a Walk, Syntax,
@@ -95,8 +99,14 @@ func GoPackages(ctx context.Context, dir string, log *slog.Logger) (*Result, []*
 		return nil, nil, fmt.Errorf("no Go packages found in %s", abs)
 	}
 
-	res := &Result{Dir: abs}
+	// go/packages doesn't say which packages are the standard library's; go list does.
+	list, err := goList(ctx, abs, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	res := &Result{Dir: abs, Repo: map[string]bool{}, Standard: standard(list)}
 	for _, p := range pkgs {
+		res.Repo[p.PkgPath] = true
 		if res.Module == "" && p.Module != nil && p.Module.Main {
 			res.Module = p.Module.Path
 		}
@@ -107,6 +117,17 @@ func GoPackages(ctx context.Context, dir string, log *slog.Logger) (*Result, []*
 	}
 	log.Info("loaded packages", "module", res.Module, "count", len(pkgs), "took", logging.Since(start))
 	return res, pkgs, nil
+}
+
+// standard is the standard library's packages in list.
+func standard(list []*listed) map[string]bool {
+	std := map[string]bool{}
+	for _, lp := range list {
+		if lp.Standard {
+			std[lp.ImportPath] = true
+		}
+	}
+	return std
 }
 
 // wrap copies what grepo uses from a go/packages package, sharing its syntax

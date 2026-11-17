@@ -186,10 +186,7 @@ func TestCallGraphIsSorted(t *testing.T) {
 func TestBuildPackage(t *testing.T) {
 	res := loadFixture(t)
 	g := buildFixtureCallGraph(t)
-	repo := map[string]bool{}
-	for _, pkg := range res.Packages {
-		repo[pkg.PkgPath] = true
-	}
+	repo := res.Repo
 
 	var types []Type
 	var variables []Variable
@@ -244,10 +241,7 @@ func TestBuildPackage(t *testing.T) {
 // its imports' keys, so a walk that looked further would be served stale.
 func TestBuildPackageSeesOnlyItsImports(t *testing.T) {
 	res := loadFixture(t)
-	repo := map[string]bool{}
-	for _, pkg := range res.Packages {
-		repo[pkg.PkgPath] = true
-	}
+	repo := res.Repo
 	for _, pkg := range res.Packages {
 		full := buildPackage(pkg, res.Dir, repo).share().encode()
 		narrow := buildPackage(pkg, res.Dir, repoImports(pkg, repo)).share().encode()
