@@ -89,6 +89,7 @@ const (
 	// Closures fixture (store/closures.go).
 	tCRunner   = storePkg + ".Runner"
 	idClosures = "(*" + tCRunner + ").closures"
+	idLocals   = "(*" + tCRunner + ").locals"
 	idStart    = "(*" + tCRunner + ").start"
 
 	// Implementations fixture (model/impls.go, store/impls.go).

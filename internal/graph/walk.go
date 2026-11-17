@@ -26,7 +26,10 @@ func (b *callGraphBuilder) walk(id string, n ast.Node) {
 				b.expr(id, spec.Type) // consts in it: type T [Max]byte
 			case *ast.ValueSpec:
 				b.expr(id, spec.Type)
-				for _, value := range spec.Values {
+				for i, value := range spec.Values {
+					if len(spec.Values) == len(spec.Names) {
+						b.assignLocal(spec.Names[i], value) // var f = s.Get
+					}
 					b.handed(id, value)
 				}
 			}

@@ -123,6 +123,9 @@ func TestCallGraphFunctions(t *testing.T) {
 		{ID: storePkg + ".mapAll", Name: "mapAll", Package: storePkg, Params: ps("xs", "[]T", "f", "func(T) T"), Pos: cat("23")},
 		{ID: idClosures, Name: "closures", Package: storePkg, Receiver: recv("r", "*"+tCRunner),
 			Params: ps("xs", "[]string"), Pos: cat("29"), Owner: tCRunner},
+		{ID: idLocals, Name: "locals", Package: storePkg, Receiver: recv("r", "*"+tCRunner),
+			Params: ps("pick", "bool", "given", "func()"), Pos: cat("58"), Owner: tCRunner},
+		{ID: storePkg + ".handleLater", Name: "handleLater", Package: storePkg, Pos: cat("75")},
 
 		// The implementations fixture (model/impls.go, store/impls.go).
 		{ID: "(" + tSealed + ").seal", Name: "seal", Package: modelPkg, Pos: "model/impls.go:8", Owner: tSealed},
@@ -290,6 +293,9 @@ func TestCallGraphClosures(t *testing.T) {
 		closure(storePkg+".fallback", 1, cat("49"), nil, nil),
 		closure(storePkg+".nested", 1, cat("53"), nil, nil),
 		closure(storePkg+".nested$1", 1, cat("54"), nil, nil),
+		// Locals holding functions.
+		closure(idLocals, 1, cat("61"), nil, nil),
+		closure(idLocals, 2, cat("64"), nil, nil),
 	}
 	// A blank var has no node: its closure is the package's, named after _.
 	blank := closure(storePkg+"._", 1, cat("51"), nil, ps("", "int"))

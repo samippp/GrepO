@@ -24,8 +24,8 @@ const (
 	idMain   = app + ".main"
 )
 
-// testIndex is a small repo: main calls Store.Get directly, from a closure
-// and through Getter, Store.Write through io.Writer (from outside the repo),
+// testIndex is a small repo: main calls Store.Get directly, from a closure,
+// through Getter and through a local, Store.Write through io.Writer (from outside the repo),
 // passes handle to http.HandleFunc and stores Store.Get in a field.
 func testIndex() *Index {
 	pg := &graph.PackageGraph{
@@ -73,6 +73,8 @@ func testIndex() *Index {
 			{Caller: idMain, Callee: "(io.Writer).Write", Pos: "main.go:30", CallKind: graph.InterfaceCall},
 			{Caller: idMain, Callee: "net/http.HandleFunc", Pos: "main.go:40", CallKind: graph.StaticCall,
 				Args: []graph.Arg{{Expr: `"/"`, Type: "string"}, {Expr: "handle", Func: idHandle}}},
+			// get := s.Get; get(): through a local holding it.
+			{Caller: idMain, Callee: "", Pos: "main.go:45", CallKind: graph.DynamicCall, Funcs: []string{idGet, idHandle}},
 			// Outside the repo: External nodes.
 			{Caller: idMain, Callee: "os.Exit", Pos: "main.go:60", CallKind: graph.StaticCall},
 			{Caller: idHandle, Callee: "(net/http.Header).Get", Pos: "main.go:70", CallKind: graph.StaticCall},
@@ -168,12 +170,16 @@ func TestCallers(t *testing.T) {
 			"direct main.go:9 " + idMain + "$1 via=",
 			"direct main.go:17 " + idMain + " via=",
 			"interface main.go:20 " + idMain + " via=" + tGetter,
+			"local main.go:45 " + idMain + " via=",
 			"value main.go:50 " + idMain + " via=" + tStore + ".onGet",
 		}},
 		// Through an interface from outside the repo.
 		{idWrite, []string{"interface main.go:30 " + idMain + " via=io.Writer"}},
 		// Passed to a function as a value.
-		{idHandle, []string{"value main.go:40 " + idMain + " via=net/http.HandleFunc"}},
+		{idHandle, []string{
+			"local main.go:45 " + idMain + " via=", // one of the local's functions
+			"value main.go:40 " + idMain + " via=net/http.HandleFunc",
+		}},
 		// An interface method: calls through it are direct; no implementations to follow.
 		{idIGet, []string{"direct main.go:20 " + idMain + " via="}},
 		// Outside the repo.

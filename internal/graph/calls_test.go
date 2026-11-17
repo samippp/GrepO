@@ -19,7 +19,7 @@ func TestCallGraphCalls(t *testing.T) {
 			Args: []Arg{{Expr: "2", Type: "int"}}},
 		// f(u.Name) where f := greet: a function value, target unknown.
 		{Caller: idMain, Callee: "", Pos: "main.go:23", CallKind: DynamicCall,
-			Args: []Arg{{Expr: "u.Name", Type: "string"}}},
+			Args: []Arg{{Expr: "u.Name", Type: "string"}}, Funcs: []string{idGreet}},
 		// func(){...}(): a static call to the closure, and greet("closure") inside it belongs to it.
 		{Caller: idMain, Callee: idMain + "$1", Pos: "main.go:25", CallKind: StaticCall},
 		{Caller: idMain + "$1", Callee: idGreet, Pos: "main.go:26", CallKind: StaticCall,
@@ -82,8 +82,8 @@ func TestCallGraphCalls(t *testing.T) {
 		{Caller: idCalls, Callee: "(*" + tRHolder + ").Touch", Pos: rat("105"), CallKind: StaticCall},
 		{Caller: idCalls, Callee: "(*" + tRHolder + ").Touch", Pos: rat("106"), CallKind: StaticCall},
 		{Caller: idCalls, Callee: "", Pos: rat("107"), CallKind: DynamicCall},
-		{Caller: idCalls, Callee: "", Pos: rat("110"), CallKind: DynamicCall},
-		{Caller: idCalls, Callee: "", Pos: rat("111"), CallKind: DynamicCall},
+		{Caller: idCalls, Callee: "", Pos: rat("110"), CallKind: DynamicCall, Funcs: []string{"(*" + tRPart + ").Bump"}},
+		{Caller: idCalls, Callee: "", Pos: rat("111"), CallKind: DynamicCall, Funcs: []string{"(*" + tRPart + ").Bump"}},
 		{Caller: storePkg + ".lock", Callee: "(*sync.Mutex).Lock", Pos: rat("115"), CallKind: StaticCall},
 		{Caller: idHands, Callee: storePkg + ".sum", Pos: rat("128"), CallKind: StaticCall, Args: []Arg{{Expr: "r.Items", Type: "[]int"}}},
 		{Caller: idHands, Callee: storePkg + ".use", Pos: rat("128"), CallKind: StaticCall, Args: []Arg{{Expr: "sum(r.Items)", Type: "int"}}},
@@ -101,7 +101,7 @@ func TestCallGraphCalls(t *testing.T) {
 		{Caller: storePkg + ".mapAll$1", Callee: "", Pos: cat("25"), CallKind: DynamicCall, Args: []Arg{{Expr: "xs[i]", Type: "T"}}},
 		{Caller: idClosures, Callee: idClosures + "$1", Pos: cat("30"), CallKind: StaticCall},
 		{Caller: idClosures + "$1", Callee: idClosures + "$1$1", Pos: cat("31"), CallKind: StaticCall},
-		{Caller: idClosures, Callee: "", Pos: cat("34"), CallKind: DynamicCall}, // inc(): through a local, not guessed
+		{Caller: idClosures, Callee: "", Pos: cat("34"), CallKind: DynamicCall, Funcs: []string{idClosures + "$2"}}, // inc(): through a local
 		{Caller: idClosures, Callee: idStart, Pos: cat("35"), CallKind: StaticCall, Stmt: "go"},
 		{Caller: idClosures, Callee: idStart, Pos: cat("36"), CallKind: StaticCall, Stmt: "defer"},
 		{Caller: idClosures, Callee: idClosures + "$3", Pos: cat("37"), CallKind: StaticCall, Stmt: "go"},
@@ -121,6 +121,13 @@ func TestCallGraphCalls(t *testing.T) {
 			{Expr: "xs", Type: "[]string"},
 			{Expr: "double[string]", Type: "func(x string) string", Func: storePkg + ".double"}}},
 		{Caller: idClosures, Callee: "", Pos: cat("46"), CallKind: DynamicCall}, // r.OnDone(): Through, not a target
+		// Through locals: Funcs is every function assigned to the local, wherever it's called from.
+		{Caller: idLocals, Callee: "", Pos: cat("63"), CallKind: DynamicCall, Funcs: []string{idLocals + "$1", idStart}},
+		{Caller: idLocals, Callee: idLocals + "$2", Pos: cat("64"), CallKind: StaticCall},
+		{Caller: idLocals + "$2", Callee: "", Pos: cat("64"), CallKind: DynamicCall, Funcs: []string{idLocals + "$1", idStart}},
+		// Assigned after the call, in the loop; then a param nothing assigns.
+		{Caller: idLocals, Callee: "", Pos: cat("68"), CallKind: DynamicCall, Funcs: []string{storePkg + ".handleLater"}},
+		{Caller: idLocals, Callee: "", Pos: cat("72"), CallKind: DynamicCall},
 		// Package level: the package calls the blank var's closure; nested's closure calls its own.
 		{Caller: storePkg, Callee: storePkg + "._$1", Pos: cat("51"), CallKind: StaticCall},
 		{Caller: storePkg + ".nested$1", Callee: storePkg + ".nested$1$1", Pos: cat("54"), CallKind: StaticCall},
@@ -174,6 +181,9 @@ func formatCall(c FunctionCall) string {
 	s := fmt.Sprintf("%s -> %q at %s (%s) args=%v", c.Caller, c.Callee, c.Pos, c.CallKind, c.Args)
 	if c.Stmt != "" {
 		s += " stmt=" + c.Stmt
+	}
+	if c.Funcs != nil {
+		s += fmt.Sprintf(" funcs=%v", c.Funcs)
 	}
 	return s
 }
