@@ -176,14 +176,10 @@ func (g *CallGraph) TypeID(tn *types.TypeName) string { return g.ids.typeID(tn) 
 // it; err is a share that can't be decoded. A CallGraphBuilder used during
 // the load holds less.
 func BuildCallGraph(res *load.Result) (g *CallGraph, shares map[string][]byte, err error) {
-	repo := map[string]bool{}
-	for _, pkg := range res.Packages {
-		repo[pkg.PkgPath] = true
-	}
 	cb := NewCallGraphBuilder(res.Dir)
 	cb.keepClosures = true
 	for _, pkg := range res.Packages {
-		cb.Add(pkg, repo)
+		cb.Add(pkg, res.Repo)
 	}
 	return cb.CallGraph()
 }

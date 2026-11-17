@@ -223,7 +223,6 @@ type translator struct {
 	pkgs       []*packages.Package // the same packages, for SSA
 	cg         *graph.CallGraph    // for its ID functions
 	fset       *token.FileSet
-	roots      map[string]bool   // repo package paths
 	initByPos  map[string]string // "file:line" → grepo ID, for init functions
 	owner      map[string]string // grepo function ID → owner type ID
 	repoTypes  map[string]bool
@@ -235,14 +234,12 @@ func newTranslator(res *load.Result, pkgs []*packages.Package, cg *graph.CallGra
 		res:        res,
 		pkgs:       pkgs,
 		cg:         cg,
-		roots:      map[string]bool{},
 		initByPos:  map[string]string{},
 		owner:      map[string]string{},
 		repoTypes:  map[string]bool{},
 		implements: map[string]bool{},
 	}
 	for _, p := range res.Packages {
-		t.roots[p.PkgPath] = true
 		t.fset = p.Fset
 	}
 	for _, f := range cg.Functions {
@@ -312,7 +309,7 @@ func (t *translator) callerID(fn *ssa.Function) (string, bool) {
 	if o := fn.Origin(); o != nil {
 		fn = o
 	}
-	if fn.Pkg == nil || !t.roots[fn.Pkg.Pkg.Path()] {
+	if fn.Pkg == nil || !t.res.Repo[fn.Pkg.Pkg.Path()] {
 		return "", false
 	}
 	if fn.Synthetic == "package initializer" {

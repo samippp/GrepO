@@ -126,7 +126,7 @@ func fromGoList(ctx context.Context, dir string, st *store.Store, log *slog.Logg
 		}
 	}
 
-	res := &Result{Dir: abs, Checked: slices.Sorted(slices.Values(ld.checked))}
+	res := &Result{Dir: abs, Checked: slices.Sorted(slices.Values(ld.checked)), Repo: ld.repo, Standard: standard(list)}
 	for _, lp := range list { // go list order: dependencies first
 		c := ld.checks[lp.ImportPath]
 		if lp.DepOnly {

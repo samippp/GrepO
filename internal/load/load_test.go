@@ -49,6 +49,28 @@ func TestFromGoListMatchesGoPackages(t *testing.T) {
 	}
 }
 
+// Repo is the Result's packages, and Standard the standard library's among
+// what was loaded, as go list says: never the repo's or a dependency's.
+func TestRepoAndStandard(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	res, err := fromGoList(t.Context(), "testdata/mod", nil, log, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, p := range res.Packages {
+		paths = append(paths, p.PkgPath)
+	}
+	if got := slices.Sorted(maps.Keys(res.Repo)); !slices.Equal(got, slices.Sorted(slices.Values(paths))) {
+		t.Errorf("repo = %v, want the packages' paths %v", got, paths)
+	}
+	for path, want := range map[string]bool{"fmt": true, "unsafe": true, "example.com/loadfix": false, "example.com/dep": false} {
+		if res.Standard[path] != want {
+			t.Errorf("standard[%s] = %v, want %v", path, res.Standard[path], want)
+		}
+	}
+}
+
 // Stdlib positions read $GOROOT/src/..., as in compiler export data, whatever
 // the install path: a type defined from a stdlib struct shows its fields'.
 func TestStdlibPositions(t *testing.T) {
@@ -144,6 +166,12 @@ func describe(res *Result) []string {
 		for n, s := range info.Scopes {
 			add("scope-node %s %T: %v", pos(n.Pos()), n, s.Names())
 		}
+	}
+	for _, path := range slices.Sorted(maps.Keys(res.Repo)) {
+		lines = append(lines, "repo "+path)
+	}
+	for _, path := range slices.Sorted(maps.Keys(res.Standard)) {
+		lines = append(lines, "standard "+path)
 	}
 	return lines
 }
