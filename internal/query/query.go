@@ -296,10 +296,11 @@ type Kind string
 const (
 	Direct    Kind = "direct"    // calls it, by name or through the interface method it is
 	Interface Kind = "interface" // calls an interface method its type implements: may run it
+	Local     Kind = "local"     // calls a local it's assigned to: f := s.Get; f()
 	Value     Kind = "value"     // passes or stores it as a func value, which may be called later
 )
 
-var kindOrder = map[Kind]int{Direct: 0, Interface: 1, Value: 2}
+var kindOrder = map[Kind]int{Direct: 0, Interface: 1, Local: 2, Value: 3}
 
 // Site is one place that can reach a function.
 type Site struct {
@@ -346,8 +347,13 @@ func (ix *Index) Callers(fn *graph.Function) []Site {
 			}
 		}
 	}
-	// Uses as a value: only this query needs them, so they're scanned for
-	// rather than indexed.
+	// Calls through locals and uses as a value: only this query needs them,
+	// so they're scanned for rather than indexed.
+	for i := range ix.g.Calls {
+		if c := &ix.g.Calls[i]; slices.Contains(c.Funcs, fn.ID) {
+			sites = append(sites, Site{Kind: Local, Pos: c.Pos, From: c.Caller, Call: c})
+		}
+	}
 	for i := range ix.g.Calls {
 		c := &ix.g.Calls[i]
 		if slices.ContainsFunc(c.Args, func(a graph.Arg) bool { return a.Func == fn.ID }) {

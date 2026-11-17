@@ -50,6 +50,11 @@ func TestCallers(t *testing.T) {
 		{[]string{"bufWriter.Write"}, []string{
 			at("store/outside.go:12") + ": store.flush: func flush(w io.Writer) { w.Write(nil) }  [via io.Writer]",
 		}, 0},
+		// Through a local: assigned after the call, in a loop.
+		{[]string{"handleLater"}, []string{
+			at("store/closures.go:68") + ": (*store.Runner).locals: g()  [through a local]",
+		}, 0},
+		{[]string{"--direct", "handleLater"}, nil, 1},
 		// A function outside the repo.
 		{[]string{"fmt.Println"}, []string{
 			at("main.go:32") + ": main.main: fmt.Println(u)",

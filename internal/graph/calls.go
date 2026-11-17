@@ -22,6 +22,9 @@ func (b *callGraphBuilder) addCall(callerID string, call *ast.CallExpr) {
 		Through:  b.through(call.Fun),
 		Stmt:     b.stmt[call],
 	})
+	if kind == DynamicCall {
+		b.callLocal(call.Fun)
+	}
 }
 
 // callee returns the ID of the function call refers to and the call's kind:

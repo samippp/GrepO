@@ -53,3 +53,23 @@ var _ = func() int { return 1 }()
 var nested = func() {
 	func() {}()
 }
+
+// Locals holding functions: calls through them get Funcs.
+func (r *Runner) locals(pick bool, given func()) {
+	var f = r.start
+	if pick {
+		f = func() {}
+	}
+	f()
+	func() { f() }()
+	var g func()
+	for i := 0; i < 2; i++ {
+		if g != nil {
+			g()
+		}
+		g = handleLater
+	}
+	given()
+}
+
+func handleLater() {}

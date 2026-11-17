@@ -27,8 +27,9 @@ as a func value. One site per line, grep-style:
 
   path:line: calling function: source line  [how]
 
-Direct calls come first, then [via Interface], then [passed to f] and
-[stored in field]; each group by position. Paths are relative to the
+Direct calls come first, then [via Interface], then [through a local]
+(f := s.Get; f()), then [passed to f] and [stored in field]; each group
+by position. Paths are relative to the
 current directory.
 
 The function is named as in Go, qualified as much as needed: Get,
@@ -113,6 +114,8 @@ func printCallers(w io.Writer, p *printer, sites []query.Site) error {
 		switch {
 		case s.Kind == query.Interface:
 			text += "  [via " + ix.Short(s.Via) + "]"
+		case s.Kind == query.Local:
+			text += "  [through a local]"
 		case s.Kind == query.Value && s.Access != nil:
 			text += "  [stored in " + ix.Short(s.Via) + "]"
 		case s.Kind == query.Value && s.Via == "":
@@ -134,7 +137,7 @@ type callersJSON struct {
 }
 
 type siteJSON struct {
-	Kind query.Kind `json:"kind"`           // direct, interface or value
+	Kind query.Kind `json:"kind"`           // direct, interface, local or value
 	Pos  string     `json:"pos"`            // path:line, relative to the current directory
 	From string     `json:"from"`           // the function the site is in, or the package for package-level code
 	Via  string     `json:"via,omitempty"`  // interface: its ID; value: the function it's passed to, or the field or var it's stored in
@@ -146,6 +149,7 @@ type siteJSON struct {
 	Args     []graph.Arg    `json:"args,omitempty"`
 	Through  string         `json:"through,omitempty"`
 	Stmt     string         `json:"stmt,omitempty"`
+	Funcs    []string       `json:"funcs,omitempty"` // local: every function assigned to the local called
 
 	Access graph.AccessKind `json:"access,omitempty"` // a value stored: assign or construct
 }
@@ -158,7 +162,7 @@ func printCallersJSON(w io.Writer, p *printer, fn *graph.Function, sites []query
 	for _, s := range sites {
 		js := siteJSON{Kind: s.Kind, Pos: p.path(s.Pos), From: s.From, Via: s.Via, Line: p.line(s.Pos)}
 		if c := s.Call; c != nil {
-			js.Callee, js.CallKind, js.Args, js.Through, js.Stmt = c.Callee, c.CallKind, c.Args, c.Through, c.Stmt
+			js.Callee, js.CallKind, js.Args, js.Through, js.Stmt, js.Funcs = c.Callee, c.CallKind, c.Args, c.Through, c.Stmt, c.Funcs
 		}
 		if s.Access != nil {
 			js.Access = s.Access.Kind

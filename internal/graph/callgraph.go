@@ -96,6 +96,7 @@ type FunctionCall struct {
 	Args     []Arg    `json:"args"`
 	Through  string   `json:"through,omitempty"` // field or package var the call is made on or takes its func from
 	Stmt     string   `json:"stmt,omitempty"`    // "go" or "defer" when the call is that statement's
+	Funcs    []string `json:"funcs,omitempty"`   // dynamic, f() on a local: the functions assigned to f, sorted
 }
 
 // Arg is one argument at a call site.
@@ -365,6 +366,8 @@ func buildPackage(pkg *load.Package, root string, repo map[string]bool) *callGra
 		closures:      map[*ast.FuncLit]string{},
 		closureParent: map[*ast.FuncLit]string{},
 		closureCount:  map[string]int{},
+
+		localFuncs: map[*types.Var]map[string]bool{},
 	}
 	for _, syntaxTree := range pkg.Syntax {
 		for _, decl := range syntaxTree.Decls {
@@ -376,6 +379,7 @@ func buildPackage(pkg *load.Package, root string, repo map[string]bool) *callGra
 			}
 		}
 	}
+	b.resolveLocalCalls()
 	return b
 }
 
@@ -441,6 +445,9 @@ type callGraphBuilder struct {
 	closures      map[*ast.FuncLit]string // closure IDs, from numberClosures
 	closureParent map[*ast.FuncLit]string
 	closureCount  map[string]int // closures numbered per ID prefix
+
+	localFuncs map[*types.Var]map[string]bool // functions assigned to each local (locals.go)
+	localCalls []localCall                    // calls through locals, given Funcs once the package is walked
 
 	types     []Type
 	variables []Variable

@@ -25,6 +25,11 @@ func (b *callGraphBuilder) addAssign(accessor string, assign *ast.AssignStmt) {
 			b.addWrite(accessor, lhs, kind, fn)
 		}
 	}
+	if len(assign.Rhs) == len(assign.Lhs) && (assign.Tok == token.DEFINE || assign.Tok == token.ASSIGN) {
+		for i, lhs := range assign.Lhs {
+			b.assignLocal(lhs, assign.Rhs[i]) // f := s.Get
+		}
+	}
 	for _, rhs := range assign.Rhs {
 		b.handed(accessor, rhs)
 	}
