@@ -382,12 +382,13 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
   - direct: calls it, by name or through the interface method it is;
   - interface, `[via I]`: calls a method of an interface its type implements (Implementations, outside interfaces included), so it may run there;
   - value, `[passed to f]` or `[stored in field]`: passes or stores it as a func value (`Arg.Func`, `Access.Func`), as in `http.HandleFunc("/", h.serve)` or `cobra.Command{RunE: run}`. Calls through func values themselves stay dynamic.
-  - `--direct` keeps only the first group. Not followed yet: a promoted method reached through an interface the embedding type implements but its own type doesn't.
+  - `--direct` keeps only the first group.
+  - Promoted methods: for a concrete method, outside ones included, the interfaces are also those of the repo types it's promoted to by embedding, at any depth (`Wrapper{*Store}` adding `Open` implements `OpenCloser`, so `oc.Close()` can run `Store.Close`; on caddy, `GzipPrecompressed{Gzip}` implements `encode.Precompressed`, and `celPkixName{*pkix.Name}` `fmt.Stringer`). Not for an interface method: a struct embedding the interface implements it, but calls through it are already direct. The graph has no promoted methods, so the query finds them from `Fields` and `Embeds`, as Go selects: the shallowest method or field of the name wins, two at one depth cancel out. Outside types have no node, so what they embed isn't known, and local types' fields don't match their IDs.
 - Each query loads the whole module from source, without the store, like every command (`internal/cli`): callers can be anywhere in it. caddy 1.5s, Kubernetes ~9s on the WSL machine. The store comes back once the commands settle what it should keep:
   - Per-package entries shaped for lookups (names, calls by callee, accesses by target, method sets), so a query reads only the packages that can matter (a function's callers are in its package and its importers), as gopls keeps per-package indexes. Not SQL rows of every call (203k on Kubernetes), which would bring back the cost of writing them.
   - One entry per repo: its packages, their keys, and its files' mtimes and sizes, so a query on an unchanged repo skips `go list`.
   - To check: whether a package's share depends only on its imports' types. Then its key could hold their API instead of their keys, and an edit to a function body would rebuild one package instead of every importer (666 of 3,675 packages after editing Kubernetes' `pkg/features`).
-- Tests: `query` (a hand-built graph): each name form, ties and the preferred package, outside functions and the repo's winning over them, each kind of site and their order, short names. `cli` (`testdata/simple`): `callers`' lines, `--direct`, `--json`, the ambiguous list, the preferred package, and each exit code.
+- Tests: `query` (a hand-built graph): each name form, ties and the preferred package, outside functions and the repo's winning over them, each kind of site and their order, promoted methods (two levels down, shadowed, ambiguous, an interface implemented twice listed once), short names. `cli` (`testdata/simple`): `callers`' lines, `--direct`, `--json`, the ambiguous list, the preferred package, and each exit code.
 
 ### Process
 - Fixture-first: failing tests before implementation; fixture additions are appended so existing line numbers don't move.
@@ -406,4 +407,5 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 | Aliasing through locals | `m := s.users; m[k] = v` writes into `Store.users` but gets no `content` edge; the `escape` at `m := s.users` makes the gap visible |
 | Pointer contents | `s.db.Close()`, `f(s.db)` may change what `db` points to; no edge by design (only direct writes like `s.db.x = 1` give `content`) |
 | Method summaries | whether a method changes its receiver, transitively; deferred, needs the root of each write on `Access` |
+| Promoted through outside types | `callers` follows embedding through repo types only: an outside embedded type's methods are known only if the repo calls them, so one shallower than the promoted method can shadow it unseen (a false site) |
 | Type strings of local types | `types.TypeString` prints a local `result` as `pkg.result`, so a param or field of a local type doesn't show its `#n` ID |
