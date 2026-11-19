@@ -146,6 +146,16 @@ func TestCallGraphFunctions(t *testing.T) {
 		{ID: "(" + tMaker + ").Make", Name: "Make", Package: storePkg, Results: ps("", storePkg+".result"),
 			Exported: true, Pos: iat("33"), Owner: tMaker},
 		{ID: storePkg + ".others", Name: "others", Package: storePkg, Pos: iat("37")},
+
+		// The promoted methods fixture (store/promoted.go).
+		{ID: "(" + tOpenCloser + ").Open", Name: "Open", Package: storePkg, Exported: true, Pos: pat("8"), Owner: tOpenCloser},
+		{ID: "(" + tOpenCloser + ").Close", Name: "Close", Package: storePkg, Exported: true, Pos: pat("9"), Owner: tOpenCloser},
+		{ID: idConnClose, Name: "Close", Package: storePkg, Receiver: recv("", "*"+tConn), Exported: true, Pos: pat("14"), Owner: tConn},
+		{ID: "(" + tWrapsConn + ").Open", Name: "Open", Package: storePkg, Receiver: recv("", tWrapsConn), Exported: true, Pos: pat("19"), Owner: tWrapsConn},
+		{ID: "(" + tShadowed + ").Open", Name: "Open", Package: storePkg, Receiver: recv("", tShadowed), Exported: true, Pos: pat("26"), Owner: tShadowed},
+		{ID: "(" + tShadowed + ").Close", Name: "Close", Package: storePkg, Receiver: recv("", tShadowed), Exported: true, Pos: pat("27"), Owner: tShadowed},
+		{ID: "(" + tOSFile + ").Open", Name: "Open", Package: storePkg, Receiver: recv("", tOSFile), Exported: true, Pos: pat("33"), Owner: tOSFile},
+		{ID: storePkg + ".closeAll", Name: "closeAll", Package: storePkg, Params: ps("oc", tOpenCloser), Pos: pat("35")},
 		{ID: "(" + tOther + ").Make", Name: "Make", Package: storePkg, Results: ps("", storePkg+".result"),
 			Exported: true, Pos: iat("39"), Owner: tOther},
 		{ID: "(" + tStringish + ").String", Name: "String", Package: modelPkg, Results: ps("", "string"),

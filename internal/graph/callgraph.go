@@ -72,6 +72,9 @@ type Implementation struct {
 	Type        string `json:"type"`                  // concrete type ID
 	Interface   string `json:"interface"`             // interface type ID
 	PointerOnly bool   `json:"pointerOnly,omitempty"` // only *Type implements it
+	// The interface's methods Type has from an embedded type, by function ID,
+	// sorted: a call through Interface can run them.
+	Promoted []string `json:"promoted,omitempty"`
 }
 
 // Field is one field of a struct type.

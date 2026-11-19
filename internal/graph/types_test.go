@@ -132,6 +132,18 @@ func TestCallGraphTypes(t *testing.T) {
 		{ID: tRawWriter, Name: "rawWriter", Package: storePkg, Kind: StructType, Pos: iat("45")},
 		{ID: tBufWriter, Name: "bufWriter", Package: storePkg, Kind: StructType, Pos: "store/outside.go:8"},
 		{ID: tFailure, Name: "failure", Package: storePkg, Kind: StructType, Pos: "store/outside.go:15"},
+
+		// The promoted methods fixture (store/promoted.go).
+		{ID: tOpenCloser, Name: "OpenCloser", Package: storePkg, Kind: InterfaceType, Exported: true, Pos: pat("7")},
+		{ID: tConn, Name: "conn", Package: storePkg, Kind: StructType, Pos: pat("12")},
+		{ID: tWrapsConn, Name: "wrapsConn", Package: storePkg, Kind: StructType, Pos: pat("17"),
+			Fields: []Field{emb(tWrapsConn, "conn", "*"+tConn, pat("17"))}},
+		{ID: tDeeper, Name: "deeper", Package: storePkg, Kind: StructType, Pos: pat("21"),
+			Fields: []Field{emb(tDeeper, "wrapsConn", tWrapsConn, pat("21"))}},
+		{ID: tShadowed, Name: "shadowed", Package: storePkg, Kind: StructType, Pos: pat("24"),
+			Fields: []Field{emb(tShadowed, "conn", "*"+tConn, pat("24"))}},
+		{ID: tOSFile, Name: "osFile", Package: storePkg, Kind: StructType, Pos: pat("31"),
+			Fields: []Field{emb(tOSFile, "File", "*os.File", pat("31"))}},
 	}
 
 	checkExact(t, "type", g.Types, want, func(ty Type) string { return fmt.Sprintf("%+v", ty) })
@@ -146,19 +158,34 @@ func TestCallGraphImplementations(t *testing.T) {
 		// Pointer receiver: only *Store implements Getter.
 		{Type: tStore, Interface: tGetter, PointerOnly: true},
 		{Type: tLabel, Interface: tNamer},
-		// Badge has Name only through its embedded Label (a promoted method).
-		{Type: tBadge, Interface: tNamer},
+		// Badge has Name only through its embedded Label (a promoted method):
+		// Promoted names the function a call through Namer can run.
+		{Type: tBadge, Interface: tNamer, Promoted: []string{"(" + tLabel + ").Name"}},
 		// Local interfaces take part like package-level ones.
 		{Type: tLabel, Interface: tLocalNamer},
-		{Type: tBadge, Interface: tLocalNamer},
+		{Type: tBadge, Interface: tLocalNamer, Promoted: []string{"(" + tLabel + ").Name"}},
 		// A local struct implements through its embedded *Store, so its value does too.
-		{Type: tJob, Interface: tGetter},
+		{Type: tJob, Interface: tGetter, Promoted: []string{idGet}},
 
 		// Signatures must compare as the type checker does (model/impls.go, store/impls.go).
 		// An unexported method belongs to its package: Token and Sealer (promoted) have
 		// model's seal; Fake's seal is store's, so Fake isn't Sealed.
 		{Type: tToken, Interface: tSealed},
-		{Type: tSealer, Interface: tSealed},
+		{Type: tSealer, Interface: tSealed, Promoted: []string{"(" + tToken + ").seal"}},
+		// Promoted methods (store/promoted.go): Promoted is the function a call
+		// through the interface runs, picked as Go selects. conn has no Open,
+		// so only the types embedding it implement OpenCloser; deeper gets
+		// both methods from two levels down; shadowed's own Close wins.
+		{Type: tWrapsConn, Interface: tOpenCloser, Promoted: []string{idConnClose}},
+		{Type: tDeeper, Interface: tOpenCloser, Promoted: []string{idConnClose, "(" + tWrapsConn + ").Open"}},
+		{Type: tShadowed, Interface: tOpenCloser},
+		// Outside methods are promoted too: osFile gets os.File's.
+		{Type: tOSFile, Interface: tNamer, Promoted: []string{"(*os.File).Name"}},
+		{Type: tOSFile, Interface: tLocalNamer, Promoted: []string{"(*os.File).Name"}},
+		{Type: tOSFile, Interface: modelPkg + ".ReadNamer", Promoted: []string{"(*os.File).Name", "(*os.File).Read"}},
+		{Type: tOSFile, Interface: "io.Writer", Promoted: []string{"(*os.File).Write"}},
+		// Nothing promoted for impl: it gets Make from an embedded interface,
+		// and a call through maker is already a call to maker's Make.
 		// Param names and aliases don't matter: Find(n int) is Find(id ID).
 		{Type: tFinder, Interface: tLookup},
 		// ...string isn't []string: varLog is a Logger, sliceLog isn't.

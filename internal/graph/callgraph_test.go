@@ -112,7 +112,18 @@ const (
 	tRawWriter    = storePkg + ".rawWriter"
 	tBufWriter    = storePkg + ".bufWriter"
 	tFailure      = storePkg + ".failure"
+
+	// Promoted methods fixture (store/promoted.go).
+	tOpenCloser = storePkg + ".OpenCloser"
+	tConn       = storePkg + ".conn"
+	tWrapsConn  = storePkg + ".wrapsConn"
+	tDeeper     = storePkg + ".deeper"
+	tShadowed   = storePkg + ".shadowed"
+	tOSFile     = storePkg + ".osFile"
+	idConnClose = "(*" + tConn + ").Close"
 )
+
+func pat(line string) string { return "store/promoted.go:" + line }
 
 // fixtureLoad and fixtureCallGraph load and build testdata/simple once for
 // every test. Tests only read them.

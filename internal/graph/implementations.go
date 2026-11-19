@@ -23,6 +23,9 @@ type concreteSummary struct {
 	ID             string            `json:"id"`
 	ValueMethods   map[string]string `json:"valueMethods"`   // T's
 	PointerMethods map[string]string `json:"pointerMethods"` // *T's, a superset
+	// *T's methods promoted from an embedded concrete type, as method key →
+	// function ID: the method a selector picks, as the type checker does.
+	Promoted map[string]string `json:"promoted,omitempty"`
 }
 
 type ifaceSummary struct {
@@ -45,7 +48,27 @@ func (b *callGraphBuilder) summarize(tn *types.TypeName) {
 		ID:             b.ids.typeID(tn),
 		ValueMethods:   b.methodSet(t),
 		PointerMethods: b.methodSet(types.NewPointer(t)),
+		Promoted:       b.promoted(types.NewPointer(t)),
 	})
+}
+
+// promoted is t's methods that come through an embedded field, by method key,
+// as the function each is. An embedded interface's methods are left out: a
+// call through one is already a call to it.
+func (b *callGraphBuilder) promoted(t types.Type) map[string]string {
+	var ms map[string]string
+	for sel := range types.NewMethodSet(t).Methods() {
+		fn := sel.Obj().(*types.Func)
+		if len(sel.Index()) == 1 || callKind(fn) == InterfaceCall {
+			continue
+		}
+		if ms == nil {
+			ms = map[string]string{}
+		}
+		b.uses(fn.Pkg())
+		ms[methodKey(fn)] = b.ids.funcID(fn)
+	}
+	return ms
 }
 
 // summarizeInterface adds an interface to the summary once, since a package
@@ -178,10 +201,18 @@ func matchImplementations(summaries []typeSummary) []Implementation {
 					if !hasMethods(c.PointerMethods, iface.Methods) {
 						continue
 					}
+					var promoted []string
+					for name := range iface.Methods {
+						if id, ok := c.Promoted[name]; ok {
+							promoted = append(promoted, id)
+						}
+					}
+					slices.Sort(promoted)
 					out = append(out, Implementation{
 						Type:        c.ID,
 						Interface:   iface.ID,
 						PointerOnly: !hasMethods(c.ValueMethods, iface.Methods), // *T has T's methods, so only this can fail
+						Promoted:    promoted,
 					})
 				}
 			}
