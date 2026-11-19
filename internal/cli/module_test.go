@@ -37,3 +37,14 @@ func TestAnalyzeSubdirectory(t *testing.T) {
 		t.Errorf("package dirs = %v, want %v", dirs, want)
 	}
 }
+
+// callers from store/ finds the sites in the module root's package, main,
+// both direct and through store.Getter, as it does from the root.
+func TestCallersSubdirectory(t *testing.T) {
+	stdout, stderr, code := run(t, "callers", "Store.Get", filepath.Join(fixture, "store"))
+	want := filepath.Join(fixture, "main.go") + ":17: main.main: u := s.Get(1)\n" +
+		filepath.Join(fixture, "main.go") + ":20: main.main: g.Get(2)  [via store.Getter]\n"
+	if code != 0 || stdout != want {
+		t.Errorf("callers Store.Get from store: exit %d, stdout:\n%s\nwant exit 0:\n%s\nstderr: %s", code, stdout, want, stderr)
+	}
+}
