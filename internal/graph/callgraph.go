@@ -494,20 +494,37 @@ func (b *callGraphBuilder) pos(p token.Pos) string {
 	return FormatPos(b.root, b.pkg.Fset.Position(p))
 }
 
-// FormatPos is how the graph writes a position: "file:line", the file
-// relative to root with forward slashes. SplitPos reads it back.
+// FormatPos is how the graph writes a position: "file:line:col", the file
+// relative to root with forward slashes, col the 1-based byte column.
+// SplitPos reads it back.
 func FormatPos(root string, p token.Position) string {
-	return rel(root, p.Filename) + ":" + strconv.Itoa(p.Line)
+	return rel(root, p.Filename) + ":" + strconv.Itoa(p.Line) + ":" + strconv.Itoa(p.Column)
 }
 
-// SplitPos splits a position FormatPos wrote; line is 0 if it has none.
-func SplitPos(pos string) (file string, line int) {
-	i := strings.LastIndex(pos, ":")
-	if i < 0 {
-		return pos, 0
+// SplitPos splits a position FormatPos wrote. One without a column
+// ("file:line") gives col 0, and one without a line, line 0 too.
+func SplitPos(pos string) (file string, line, col int) {
+	rest, n, ok := cutNumber(pos)
+	if !ok {
+		return pos, 0, 0
 	}
-	line, _ = strconv.Atoi(pos[i+1:])
-	return pos[:i], line
+	if file, line, ok := cutNumber(rest); ok {
+		return file, line, n
+	}
+	return rest, n, 0
+}
+
+// cutNumber splits s at its last colon if a number follows it.
+func cutNumber(s string) (before string, n int, ok bool) {
+	i := strings.LastIndex(s, ":")
+	if i < 0 {
+		return s, 0, false
+	}
+	n, err := strconv.Atoi(s[i+1:])
+	if err != nil {
+		return s, 0, false
+	}
+	return s[:i], n, true
 }
 
 // CountByKind counts calls per kind. The StaticCall share is the resolution rate.

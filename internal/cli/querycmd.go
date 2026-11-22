@@ -58,7 +58,7 @@ func newPrinter(rg *repoGraph) *printer {
 
 // path is a graph position, relative to the root, made relative to rg.base.
 func (p *printer) path(pos string) string {
-	file, line := graph.SplitPos(pos)
+	file, line, col := graph.SplitPos(pos)
 	abs := filepath.Join(p.rg.root, filepath.FromSlash(file))
 	if rel, err := filepath.Rel(p.rg.base, abs); err == nil {
 		abs = rel
@@ -66,12 +66,16 @@ func (p *printer) path(pos string) string {
 	if line == 0 {
 		return abs
 	}
-	return abs + ":" + strconv.Itoa(line)
+	abs += ":" + strconv.Itoa(line)
+	if col == 0 {
+		return abs
+	}
+	return abs + ":" + strconv.Itoa(col)
 }
 
 // line is the trimmed source line at pos, or "" if it can't be read.
 func (p *printer) line(pos string) string {
-	file, n := graph.SplitPos(pos)
+	file, n, _ := graph.SplitPos(pos)
 	lines, ok := p.files[file]
 	if !ok {
 		data, err := os.ReadFile(filepath.Join(p.rg.root, filepath.FromSlash(file)))

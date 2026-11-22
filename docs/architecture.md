@@ -10,7 +10,7 @@ GitHub link ──► source ──► load ────────────
                + commit    each repo package is     CallGraphBuilder   → types, variables, functions,
                            walked once it's checked   (Add per package,   calls, implementations
                                                        CallGraph merges)
-                                                          └──► query ──► callers: path:line lines, or --json
+                                                          └──► query ──► callers: path:line:col lines, or --json
                                                                names → functions, sites that reach them
 ```
 
@@ -87,7 +87,7 @@ Value → consts only, exact (constant.Value.ExactString)
 ```
 Caller    a function ID, or a package path for package-level calls
 Callee    a function ID; "" for dynamic calls
-Pos       "file:line" of the call site (start of the call expression)
+Pos       "file:line:col" of the call site (start of the call expression)
 CallKind  static | interface | dynamic
 Args      []{Expr as written, Type, Func}
           Func: the function the argument is (a closure, a declared function, a
@@ -102,7 +102,7 @@ Stmt      "go" | "defer" when the call is that statement's; "" otherwise
 ```
 Accessor  a function ID, or a package path for package-level values
 Target    a VarID or FieldID, in the repo or not
-Pos       "file:line" of the site (start of the expression)
+Pos       "file:line:col" of the site (start of the expression)
 Kind      assign | update | content | construct | read | escape
 Func      assign / construct: the function the written value is, like Arg.Func
           (cobra.Command{RunE: func…}, s.onErr = h); "" otherwise
@@ -185,7 +185,7 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 | Local type | enclosing function's or closure's ID + `.name#n`, numbered per name in source order | `…simple.save.result#2`, `…simple.spawn$1.job#1` |
 | Field | type ID + `.` + name | `…store.Store.users` |
 | Variable | `pkg.name` | `…store.defaultStore` |
-| Position (`Pos`) | `file:line`, relative to the repo root (`graph.FormatPos`, read back with `SplitPos`): where the record's own syntax is. A node's declaration; an edge's site (the call, the write; a literal's field). The other ends' positions are on their nodes. | `store/store.go:23` |
+| Position (`Pos`) | `file:line:col`, relative to the repo root, the column a 1-based byte offset (`graph.FormatPos`, read back with `SplitPos`): where the record's own syntax is. A node's declaration; an edge's site (the call, the write; a literal's field). The other ends' positions are on their nodes. | `store/store.go:23:17` |
 
 `(X).Name` follows Go's method-expression syntax: `(Getter).Get` is valid Go. Because the receiver is the type's ID, a method's ID always matches its `Owner`, even when the receiver renames type parameters (`func (l *List[E])` → `List[T]`) or is written through an alias (`func (s *S)` with `S = Store` → `Store`).
 
@@ -202,7 +202,7 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 - Generic types keep parameter names (`List[T]`) but not constraints.
 - `init` functions get file + position (`@file#n`); inserting an `init` above another shifts its number (accepted: nothing can call `init`, so no edges break).
 - Method IDs use the type's ID as the receiver (consistent with `Owner`; normalizes renamed type parameters and constraints).
-- Call positions are `file:line` at the start of the call expression.
+- Call positions are `file:line:col` at the start of the call expression. Columns came with the output design (output.md): editors jump to the call, and two calls on one line are two positions. vta-diff maps SSA's call position (the `(`, or a `go`/`defer` keyword) to the call's start; on caddy that matched every edge "Only in grepo", "Only in VTA" and "Line differs" had listed, and split ten same-line pairs of interface calls that had shared VTA's targets.
 - Local types: `parent.name#n`, always numbered. Chosen over `pkg.name@file:line` because the ID says where the type lives (useful to the MCP) and survives line shifts (IDs that agents and scripts keep between queries). The parent is the innermost enclosing function or closure (`spawn$1.job#1`), or a package-level closure's ID.
 - Local type and `init` IDs are assigned during the walk and kept in an `idTable` that `funcID` / `typeID` consult; the graph keeps it, so `CallGraph.FuncID` / `TypeID` work for consumers like vtadiff. A local type missing from the table gets `#?` rather than silently taking a package-level ID.
 
@@ -378,10 +378,10 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 
 ### Queries (M2b, M3)
 - Output rules for every command (lines, formats, trees, JSON, MCP): [output.md](output.md).
-- Commands answer one question each, grep-style: one result per line on stdout as `path:line: ...`, clickable in editors and terminals and usable as a quickfix list; logs on stderr, Info only with `-v`; `--json` for scripts and agents, one object per run with IDs in full and positions as printed. Exit codes as grep's: 0 found, 1 nothing found, 2 an error (an ambiguous name too).
+- Commands answer one question each, grep-style: one result per line on stdout as `path:line:col: ...`, clickable in editors and terminals and usable as a quickfix list; logs on stderr, Info only with `-v`; `--json` for scripts and agents, one object per run with IDs in full and positions as printed. Exit codes as grep's: 0 found, 1 nothing found, 2 an error (an ambiguous name too).
 - `internal/query` indexes the graph (`graph.PackageGraph`, `graph.CallGraph`) and answers from it, reading nothing else, so it works however the graph was built. Commands in `internal/cli` load, ask and print. `--json` is a contract with agents; the store's encoding stays internal.
 - Paths are relative to the current directory for a local repo, so they're clickable where the command ran; a clone's are the repo's own. Source lines are read from the files when printed, not stored.
-- Names: an ID, or the name qualified as much as needed: `Get`, `Store.Get`, `(*Store).Get`, `store.Store.Get`, a path suffix (`caddyhttp/reverseproxy.Handler.ServeHTTP`); type args are ignored. The package in the directory asked about wins a tie (on caddy, 40 of 2,003 names are ambiguous; `Handler.ServeHTTP` matches 6 types). Otherwise the candidates are listed on stderr as `path:line: name`, each name one that picks it (the ID when two packages share a name), and the command exits with 2. Functions outside the repo are their `External` nodes, qualified by their packages' declared names from `Dependencies` (`os.Exit`, `humanize.Bytes` for `github.com/dustin/go-humanize`), and a repo function of the same name wins over them. Closures and methods of local types are found by ID only.
+- Names: an ID, or the name qualified as much as needed: `Get`, `Store.Get`, `(*Store).Get`, `store.Store.Get`, a path suffix (`caddyhttp/reverseproxy.Handler.ServeHTTP`); type args are ignored. The package in the directory asked about wins a tie (on caddy, 40 of 2,003 names are ambiguous; `Handler.ServeHTTP` matches 6 types). Otherwise the candidates are listed on stderr as `path:line:col: name`, each name one that picks it (the ID when two packages share a name), and the command exits with 2. Functions outside the repo are their `External` nodes, qualified by their packages' declared names from `Dependencies` (`os.Exit`, `humanize.Bytes` for `github.com/dustin/go-humanize`), and a repo function of the same name wins over them. Closures and methods of local types are found by ID only.
 - `callers <function>`: the sites that can reach it, in four groups, each by position (lines as numbers):
   - direct: calls it, by name or through the interface method it is;
   - interface, `[via I]`: calls a method of an interface its type implements (Implementations, outside interfaces included), so it may run there;

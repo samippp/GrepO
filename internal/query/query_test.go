@@ -67,22 +67,23 @@ func testIndex() *Index {
 			{ID: "github.com/dustin/go-humanize.Bytes", Name: "Bytes", Package: "github.com/dustin/go-humanize"},
 		},
 		Calls: []graph.FunctionCall{
-			{Caller: idMain, Callee: idGet, Pos: "main.go:17", CallKind: graph.StaticCall},
-			{Caller: idMain + "$1", Callee: idGet, Pos: "main.go:9", CallKind: graph.StaticCall},
-			{Caller: idMain, Callee: idIGet, Pos: "main.go:20", CallKind: graph.InterfaceCall},
-			{Caller: idMain, Callee: "(io.Writer).Write", Pos: "main.go:30", CallKind: graph.InterfaceCall},
-			{Caller: idMain, Callee: "net/http.HandleFunc", Pos: "main.go:40", CallKind: graph.StaticCall,
+			{Caller: idMain, Callee: idGet, Pos: "main.go:17:12", CallKind: graph.StaticCall},
+			{Caller: idMain, Callee: idGet, Pos: "main.go:17:3", CallKind: graph.StaticCall}, // the same line, earlier
+			{Caller: idMain + "$1", Callee: idGet, Pos: "main.go:9:2", CallKind: graph.StaticCall},
+			{Caller: idMain, Callee: idIGet, Pos: "main.go:20:2", CallKind: graph.InterfaceCall},
+			{Caller: idMain, Callee: "(io.Writer).Write", Pos: "main.go:30:2", CallKind: graph.InterfaceCall},
+			{Caller: idMain, Callee: "net/http.HandleFunc", Pos: "main.go:40:2", CallKind: graph.StaticCall,
 				Args: []graph.Arg{{Expr: `"/"`, Type: "string"}, {Expr: "handle", Func: idHandle}}},
 			// get := s.Get; get(): through a local holding it.
-			{Caller: idMain, Callee: "", Pos: "main.go:45", CallKind: graph.DynamicCall, Funcs: []string{idGet, idHandle}},
+			{Caller: idMain, Callee: "", Pos: "main.go:45:2", CallKind: graph.DynamicCall, Funcs: []string{idGet, idHandle}},
 			// Outside the repo: External nodes.
-			{Caller: idMain, Callee: "os.Exit", Pos: "main.go:60", CallKind: graph.StaticCall},
-			{Caller: idHandle, Callee: "(net/http.Header).Get", Pos: "main.go:70", CallKind: graph.StaticCall},
-			{Caller: idHandle, Callee: "(*gopkg.in/yaml.v3.Node).Decode", Pos: "main.go:71", CallKind: graph.StaticCall},
-			{Caller: idHandle, Callee: "github.com/dustin/go-humanize.Bytes", Pos: "main.go:72", CallKind: graph.StaticCall},
+			{Caller: idMain, Callee: "os.Exit", Pos: "main.go:60:2", CallKind: graph.StaticCall},
+			{Caller: idHandle, Callee: "(net/http.Header).Get", Pos: "main.go:70:2", CallKind: graph.StaticCall},
+			{Caller: idHandle, Callee: "(*gopkg.in/yaml.v3.Node).Decode", Pos: "main.go:71:2", CallKind: graph.StaticCall},
+			{Caller: idHandle, Callee: "github.com/dustin/go-humanize.Bytes", Pos: "main.go:72:2", CallKind: graph.StaticCall},
 		},
 		Accesses: []graph.Access{
-			{Accessor: idMain, Target: tStore + ".onGet", Pos: "main.go:50", Kind: graph.AssignAccess, Func: idGet},
+			{Accessor: idMain, Target: tStore + ".onGet", Pos: "main.go:50:2", Kind: graph.AssignAccess, Func: idGet},
 		},
 		Implementations: []graph.Implementation{
 			{Type: tStore, Interface: tGetter, PointerOnly: true},
@@ -166,25 +167,26 @@ func TestCallers(t *testing.T) {
 		want []string
 	}{
 		{idGet, []string{
-			// Direct first, by line as a number: 9 before 17.
-			"direct main.go:9 " + idMain + "$1 via=",
-			"direct main.go:17 " + idMain + " via=",
-			"interface main.go:20 " + idMain + " via=" + tGetter,
-			"local main.go:45 " + idMain + " via=",
-			"value main.go:50 " + idMain + " via=" + tStore + ".onGet",
+			// Direct first, by line and column as numbers: 9 before 17, 17:3 before 17:12.
+			"direct main.go:9:2 " + idMain + "$1 via=",
+			"direct main.go:17:3 " + idMain + " via=",
+			"direct main.go:17:12 " + idMain + " via=",
+			"interface main.go:20:2 " + idMain + " via=" + tGetter,
+			"local main.go:45:2 " + idMain + " via=",
+			"value main.go:50:2 " + idMain + " via=" + tStore + ".onGet",
 		}},
 		// Through an interface from outside the repo.
-		{idWrite, []string{"interface main.go:30 " + idMain + " via=io.Writer"}},
+		{idWrite, []string{"interface main.go:30:2 " + idMain + " via=io.Writer"}},
 		// Passed to a function as a value.
 		{idHandle, []string{
-			"local main.go:45 " + idMain + " via=", // one of the local's functions
-			"value main.go:40 " + idMain + " via=net/http.HandleFunc",
+			"local main.go:45:2 " + idMain + " via=", // one of the local's functions
+			"value main.go:40:2 " + idMain + " via=net/http.HandleFunc",
 		}},
 		// An interface method: calls through it are direct; no implementations to follow.
-		{idIGet, []string{"direct main.go:20 " + idMain + " via="}},
+		{idIGet, []string{"direct main.go:20:2 " + idMain + " via="}},
 		// Outside the repo.
-		{"os.Exit", []string{"direct main.go:60 " + idMain + " via="}},
-		{"(io.Writer).Write", []string{"direct main.go:30 " + idMain + " via="}},
+		{"os.Exit", []string{"direct main.go:60:2 " + idMain + " via="}},
+		{"(io.Writer).Write", []string{"direct main.go:30:2 " + idMain + " via="}},
 	} {
 		f, err := ix.Func(tc.id, "")
 		if err != nil {
@@ -220,8 +222,8 @@ func TestCallersPromoted(t *testing.T) {
 			{ID: idMain, Name: "main", Package: app},
 		},
 		Calls: []graph.FunctionCall{
-			{Caller: idMain, Callee: "(" + tCloser + ").Close", Pos: "main.go:10", CallKind: graph.InterfaceCall},
-			{Caller: idMain, Callee: "(" + tOC + ").Close", Pos: "main.go:11", CallKind: graph.InterfaceCall},
+			{Caller: idMain, Callee: "(" + tCloser + ").Close", Pos: "main.go:10:2", CallKind: graph.InterfaceCall},
+			{Caller: idMain, Callee: "(" + tOC + ").Close", Pos: "main.go:11:2", CallKind: graph.InterfaceCall},
 		},
 		Implementations: []graph.Implementation{
 			{Type: tStore, Interface: tCloser, PointerOnly: true},
@@ -236,11 +238,11 @@ func TestCallersPromoted(t *testing.T) {
 		want []string
 	}{
 		{idClose, []string{
-			"interface main.go:10 via=" + tCloser, // once, though Wrapper implements it too
-			"interface main.go:11 via=" + tOC,     // only through embedding, once for Wrapper and Outer
+			"interface main.go:10:2 via=" + tCloser, // once, though Wrapper implements it too
+			"interface main.go:11:2 via=" + tOC,     // only through embedding, once for Wrapper and Outer
 		}},
 		// An interface method's callers are calls through it, whoever implements it.
-		{"(" + tCloser + ").Close", []string{"direct main.go:10 via="}},
+		{"(" + tCloser + ").Close", []string{"direct main.go:10:2 via="}},
 	} {
 		f, err := ix.Func(tc.id, "")
 		if err != nil {

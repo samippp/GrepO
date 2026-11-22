@@ -44,8 +44,8 @@ func TestAnalyzeSubdirectory(t *testing.T) {
 func TestCallersSubdirectory(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := run(t, "callers", "Store.Get", filepath.Join(fixture, "store"))
-	want := filepath.Join(fixture, "main.go") + ":17: main.main: u := s.Get(1)\n" +
-		filepath.Join(fixture, "main.go") + ":20: main.main: g.Get(2)  [via store.Getter]\n"
+	want := filepath.Join(fixture, "main.go") + ":17:7: main.main: u := s.Get(1)\n" +
+		filepath.Join(fixture, "main.go") + ":20:2: main.main: g.Get(2)  [via store.Getter]\n"
 	if code != 0 || stdout != want {
 		t.Errorf("callers Store.Get from store: exit %d, stdout:\n%s\nwant exit 0:\n%s\nstderr: %s", code, stdout, want, stderr)
 	}
