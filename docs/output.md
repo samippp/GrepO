@@ -141,7 +141,7 @@ One tool per command, with the command's flags as arguments. A result is the com
 
 ## 9. Changes before the next command
 
-1. **Columns in positions:**
+1. **Columns in positions** (done):
    - `graph.FormatPos` writes `path:line:col`, and `SplitPos` reads it, so the graph, `analyze` JSON, store shares and `callers` all change. Store keys hold grepo's binary, so old rows aren't reused.
    - Two calls on one line become two positions. vta-diff can then match them exactly, instead of treating a repeated call as matched (`vtadiff.Compare`).
    - Cost: about 390 position literals in tests change, most through helpers like `pat("35")`.

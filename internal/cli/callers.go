@@ -25,7 +25,7 @@ func newCallersCmd(a *app) *cobra.Command {
 through an interface its type implements, and places it's passed or stored
 as a func value. One site per line, grep-style:
 
-  path:line: calling function: source line  [how]
+  path:line:col: calling function: source line  [how]
 
 Direct calls come first, then [via Interface], then [through a local]
 (f := s.Get; f()), then [passed to f] and [stored in field]; each group
@@ -99,7 +99,7 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 	return cmd
 }
 
-// printCallers prints one site per line: path:line: from: source line  [how].
+// printCallers prints one site per line: path:line:col: from: source line  [how].
 func printCallers(w io.Writer, p *printer, sites []query.Site) error {
 	ix := p.rg.ix
 	for _, s := range sites {
@@ -138,7 +138,7 @@ type callersJSON struct {
 
 type siteJSON struct {
 	Kind query.Kind `json:"kind"`           // direct, interface, local or value
-	Pos  string     `json:"pos"`            // path:line, relative to the current directory
+	Pos  string     `json:"pos"`            // path:line:col, relative to the current directory
 	From string     `json:"from"`           // the function the site is in, or the package for package-level code
 	Via  string     `json:"via,omitempty"`  // interface: its ID; value: the function it's passed to, or the field or var it's stored in
 	Line string     `json:"line,omitempty"` // the source line, trimmed

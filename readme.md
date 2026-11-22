@@ -13,7 +13,7 @@ Find out how data flows through a Go repository: who calls what, what runs behin
 
 One command, one question, answered from the terminal:
 
-- Results go to stdout as `path:line` lines, clickable in editors and terminals and usable as a vim quickfix list; logs go to stderr.
+- Results go to stdout as `path:line:col` lines, clickable in editors and terminals and usable as a vim quickfix list; logs go to stderr.
 - `--json` for scripts and agents.
 - Graphs can also come out as Mermaid, which GitHub renders in issues, PRs and READMEs, or as DOT.
 - Later runs reuse what an earlier run built, so repeat questions on a large repo don't start over.
@@ -44,17 +44,17 @@ go build -o grepo.exe ./cmd/grepo
 ./grepo.exe analyze ./path/to/repo -o graph.json       # local path, JSON to a file
 
 cd path/to/repo
-grepo callers Store.Get                          # path:line: calling function: source line
+grepo callers Store.Get                          # path:line:col: calling function: source line
 grepo callers --json '(*Server).Serve' ./server  # JSON; ./server's package wins a tie
 grepo callers os.Exit                            # functions outside the repo work too
 ```
 
 ```
 $ grepo callers App.Emit        # in caddy
-modules/caddyhttp/reverseproxy/healthchecks.go:479: (*reverseproxy.Handler).doActiveHealthCheck$1: h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
-modules/caddyhttp/reverseproxy/healthchecks.go:502: (*reverseproxy.Handler).doActiveHealthCheck$2: h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
-modules/caddytls/tls.go:1088: (*caddytls.TLS).onEvent: evt := t.events.Emit(t.ctx, eventName, data)
-context.go:296: (caddy.Context).emitEvent: return ctx.cfg.eventEmitter.Emit(ctx, name, data)  [via caddy.eventEmitter]
+modules/caddyhttp/reverseproxy/healthchecks.go:479:5: (*reverseproxy.Handler).doActiveHealthCheck$1: h.events.Emit(h.ctx, "unhealthy", map[string]any{"host": hostAddr})
+modules/caddyhttp/reverseproxy/healthchecks.go:502:5: (*reverseproxy.Handler).doActiveHealthCheck$2: h.events.Emit(h.ctx, "healthy", map[string]any{"host": hostAddr})
+modules/caddytls/tls.go:1088:9: (*caddytls.TLS).onEvent: evt := t.events.Emit(t.ctx, eventName, data)
+context.go:296:9: (caddy.Context).emitEvent: return ctx.cfg.eventEmitter.Emit(ctx, name, data)  [via caddy.eventEmitter]
 ```
 
 Query commands exit like grep: 0 when they find something, 1 when they don't, 2 on an error, including a name that matches several functions (they're listed, each with a name that picks it).
@@ -76,7 +76,7 @@ Requirements:
 ## Pipeline
 
 ```
-GitHub link ──► source ──► load ──► graph ──► store ──► query ──► cli commands: path:line text, --json, --format mermaid|dot*
+GitHub link ──► source ──► load ──► graph ──► store ──► query ──► cli commands: path:line:col text, --json, --format mermaid|dot*
  or local path                                               └──► grepo mcp*: the same queries as MCP tools, for agents
 ```
 
@@ -134,8 +134,8 @@ Milestone numbers are kept as they were, so references in issues and the docs st
     - partial pass without dependencies: answers in seconds, marked partial until the full load lands
     - `--no-cgo`
     - import a graph built elsewhere (e.g. by CI), then rebuild only what changed locally
-- **M3: CLI commands** (grep-style `path:line` output, `--json` on every command, `--format mermaid|dot` on graphs)
-  - grep's exit codes (0 found, 1 none, 2 error) ✅; positions with columns (`path:line:col`), so editors jump to the exact call
+- **M3: CLI commands** (grep-style `path:line:col` output, as [docs/output.md](docs/output.md) sets out, `--json` on every command, `--format mermaid|dot` on graphs)
+  - grep's exit codes (0 found, 1 none, 2 error) ✅; positions with columns (`path:line:col`), so editors jump to the exact call ✅
   - order: `callers`, `callees`, `find`, `state`, `pkg`, `entry`, `impact`, then `grepo mcp`; each loads from source until the store keeps what they read
   - Working in code:
     - `state <type|var>`: who writes each field or var, by kind, with a role (config, live state, counter, no writes found)

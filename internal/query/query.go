@@ -215,7 +215,7 @@ var kindOrder = map[Kind]int{Direct: 0, Interface: 1, Local: 2, Value: 3}
 // Site is one place that can reach a function.
 type Site struct {
 	Kind Kind
-	Pos  string // "file:line", relative to the repo root
+	Pos  string // "file:line:col", relative to the repo root
 	From string // ID of the function the site is in; a package path for package-level code
 
 	// Interface: the interface's ID. Value: the function it's passed to ("" if
@@ -275,11 +275,11 @@ func (ix *Index) Callers(fn *graph.Function) []Site {
 	return sites
 }
 
-// comparePos orders "file:line" positions by file, then line as a number.
+// comparePos orders positions by file, then line and column as numbers.
 func comparePos(a, b string) int {
-	af, al := graph.SplitPos(a)
-	bf, bl := graph.SplitPos(b)
-	return cmp.Or(cmp.Compare(af, bf), cmp.Compare(al, bl))
+	af, al, ac := graph.SplitPos(a)
+	bf, bl, bc := graph.SplitPos(b)
+	return cmp.Or(cmp.Compare(af, bf), cmp.Compare(al, bl), cmp.Compare(ac, bc))
 }
 
 // Short is id with each package path cut to the package's name, as Go code

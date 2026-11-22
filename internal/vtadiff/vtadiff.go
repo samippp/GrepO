@@ -69,9 +69,9 @@ func Compare(res *load.Result, pkgs []*packages.Package, cg *graph.CallGraph) *R
 	ifaceOutside := r.cat("Interface targets outside the repo", "the target type has no grepo node, or the interface is from outside the repo and Implementations has nothing for it (generic or unnamed interfaces), so they can't confirm it (by design)")
 	ifaceNone := r.cat("Interface calls with no VTA target", "VTA found no concrete type reaching the call")
 
-	// Positions are file:line, so a site can hold several calls. Match within
-	// each site by callee: static by exact ID, interface by method name, and
-	// whatever is left over goes to dynamic calls on the same line.
+	// A site is a caller and a position. Match within each site by callee:
+	// static by exact ID, interface by method name, and whatever is left
+	// over goes to a dynamic call there.
 	theirsAt := map[string][]edge{}
 	for _, e := range theirs {
 		k := site(e.caller, e.pos)
@@ -93,15 +93,11 @@ func Compare(res *load.Result, pkgs []*packages.Package, cg *graph.CallGraph) *R
 		calls, targets := oursAt[k], theirsAt[k]
 
 		var leftoverStatic []graph.FunctionCall
-		matched := map[string]bool{} // callees matched on this line
 		for _, c := range calls {
 			if c.CallKind != graph.StaticCall {
 				continue
 			}
-			// The same call twice on one line looks identical (no column),
-			// and VTA's copies were merged, so a repeat counts as matched.
-			if es := take(targets, used, func(e edge) bool { return e.callee == c.Callee }); len(es) > 0 || matched[c.Callee] {
-				matched[c.Callee] = true
+			if es := take(targets, used, func(e edge) bool { return e.callee == c.Callee }); len(es) > 0 {
 				r.Matched++
 			} else {
 				leftoverStatic = append(leftoverStatic, c)
@@ -221,7 +217,8 @@ type translator struct {
 	pkgs       []*packages.Package // the same packages, for SSA
 	cg         *graph.CallGraph    // for its ID functions
 	fset       *token.FileSet
-	owner      map[string]string // grepo function ID → owner type ID
+	callStart  map[token.Pos]token.Pos // SSA's call position → the call's start (sitePos)
+	owner      map[string]string       // grepo function ID → owner type ID
 	repoTypes  map[string]bool
 	implements map[string]bool // "type|interface"
 }
@@ -231,6 +228,7 @@ func newTranslator(res *load.Result, pkgs []*packages.Package, cg *graph.CallGra
 		res:        res,
 		pkgs:       pkgs,
 		cg:         cg,
+		callStart:  callStarts(pkgs),
 		owner:      map[string]string{},
 		repoTypes:  map[string]bool{},
 		implements: map[string]bool{},
@@ -347,17 +345,37 @@ func (t *translator) calleeID(fn *ssa.Function) (id, reason string) {
 // grepo has no node for it: the source has no closure there.
 const rangeYield = "range-over-func yield"
 
-// sitePos is the edge's call site as grepo writes it. A closure called where
-// it's written (func(){…}()) is at its start, not at SSA's "(" after its body.
+// sitePos is the edge's call site as grepo writes it: the start of the call
+// expression. SSA puts a call at its "(", which for a closure called where
+// it's written (func(){…}()) comes after the body, and a go or defer
+// statement at its keyword.
 func (t *translator) sitePos(e *callgraph.Edge) string {
 	p := e.Site.Pos()
-	if lit, ok := e.Callee.Func.Syntax().(*ast.FuncLit); ok && p >= lit.End() {
-		site, end := t.fset.Position(p), t.fset.Position(lit.End())
-		if site.Filename == end.Filename && site.Line == end.Line {
-			p = lit.Pos()
-		}
+	if start, ok := t.callStart[p]; ok {
+		p = start
 	}
 	return graph.FormatPos(t.res.Dir, t.fset.Position(p))
+}
+
+// callStarts maps where SSA puts each call in pkgs to where the call starts.
+func callStarts(pkgs []*packages.Package) map[token.Pos]token.Pos {
+	starts := map[token.Pos]token.Pos{}
+	for _, p := range pkgs {
+		for _, f := range p.Syntax {
+			ast.Inspect(f, func(n ast.Node) bool {
+				switch n := n.(type) {
+				case *ast.CallExpr:
+					starts[n.Lparen] = n.Pos()
+				case *ast.GoStmt:
+					starts[n.Go] = n.Call.Pos()
+				case *ast.DeferStmt:
+					starts[n.Defer] = n.Call.Pos()
+				}
+				return true
+			})
+		}
+	}
+	return starts
 }
 
 // closureID is grepo's ID for an SSA closure: SSA keeps the func literal it
@@ -411,12 +429,12 @@ func methodName(id string) string {
 
 // nearby finds an unmatched VTA edge with c's caller and callee within 3 lines.
 func nearby(edges []edge, c graph.FunctionCall) int {
-	file, line := graph.SplitPos(c.Pos)
+	file, line, _ := graph.SplitPos(c.Pos)
 	for i, e := range edges {
 		if e.caller != c.Caller || e.callee != c.Callee {
 			continue
 		}
-		f, l := graph.SplitPos(e.pos)
+		f, l, _ := graph.SplitPos(e.pos)
 		if f == file && l >= line-3 && l <= line+3 {
 			return i
 		}

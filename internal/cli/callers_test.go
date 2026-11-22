@@ -36,35 +36,35 @@ func TestCallers(t *testing.T) {
 	}{
 		// A direct call, then one through the interface *Store implements.
 		{[]string{"Store.Get"}, []string{
-			at("main.go:17") + ": main.main: u := s.Get(1)",
-			at("main.go:20") + ": main.main: g.Get(2)  [via store.Getter]",
+			at("main.go:17:7") + ": main.main: u := s.Get(1)",
+			at("main.go:20:2") + ": main.main: g.Get(2)  [via store.Getter]",
 		}, 0},
-		{[]string{"--direct", "Store.Get"}, []string{at("main.go:17") + ": main.main: u := s.Get(1)"}, 0},
+		{[]string{"--direct", "Store.Get"}, []string{at("main.go:17:7") + ": main.main: u := s.Get(1)"}, 0},
 		// Passed as a value.
 		{[]string{"handle"}, []string{
-			at("store/closures.go:40") + `: (*store.Runner).closures: http.HandleFunc("/a", handle)  [passed to http.HandleFunc]`,
+			at("store/closures.go:40:2") + `: (*store.Runner).closures: http.HandleFunc("/a", handle)  [passed to http.HandleFunc]`,
 		}, 0},
 		// Through interfaces from outside the repo: the built-in error, and io.Writer.
 		{[]string{"failure.Error"}, []string{
-			at("main.go:78") + ": main.describe: func describe(err error) string { return err.Error() }  [via error]",
+			at("main.go:78:42") + ": main.describe: func describe(err error) string { return err.Error() }  [via error]",
 		}, 0},
 		{[]string{"bufWriter.Write"}, []string{
-			at("store/outside.go:12") + ": store.flush: func flush(w io.Writer) { w.Write(nil) }  [via io.Writer]",
+			at("store/outside.go:12:27") + ": store.flush: func flush(w io.Writer) { w.Write(nil) }  [via io.Writer]",
 		}, 0},
 		// Promoted: conn has no Open, so a call through OpenCloser reaches its
 		// Close only through the types embedding it.
 		{[]string{"conn.Close"}, []string{
-			at("store/promoted.go:35") + ": store.closeAll: func closeAll(oc OpenCloser) { oc.Close() }  [via store.OpenCloser]",
+			at("store/promoted.go:35:32") + ": store.closeAll: func closeAll(oc OpenCloser) { oc.Close() }  [via store.OpenCloser]",
 		}, 0},
 		// Through a local: assigned after the call, in a loop.
 		{[]string{"handleLater"}, []string{
-			at("store/closures.go:68") + ": (*store.Runner).locals: g()  [through a local]",
+			at("store/closures.go:68:4") + ": (*store.Runner).locals: g()  [through a local]",
 		}, 0},
 		{[]string{"--direct", "handleLater"}, nil, 1},
 		// A function outside the repo.
 		{[]string{"fmt.Println"}, []string{
-			at("main.go:32") + ": main.main: fmt.Println(u)",
-			at("main.go:36") + `: main.greet: fmt.Println("hello", name)`,
+			at("main.go:32:2") + ": main.main: fmt.Println(u)",
+			at("main.go:36:2") + `: main.greet: fmt.Println("hello", name)`,
 		}, 0},
 		// Found, but nothing calls it: 1, as grep's.
 		{[]string{"main.main"}, nil, 1},
@@ -92,9 +92,9 @@ func TestCallersAmbiguous(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := run(t, "callers", "seal", fixture)
 	want := "seal matches 3 functions; name one of them:\n" +
-		filepath.Join(fixture, "model", "impls.go") + ":8: (model.Sealed).seal\n" +
-		filepath.Join(fixture, "model", "impls.go") + ":12: (model.Token).seal\n" +
-		filepath.Join(fixture, "store", "impls.go") + ":8: (store.Fake).seal\n"
+		filepath.Join(fixture, "model", "impls.go") + ":8:24: (model.Sealed).seal\n" +
+		filepath.Join(fixture, "model", "impls.go") + ":12:14: (model.Token).seal\n" +
+		filepath.Join(fixture, "store", "impls.go") + ":8:13: (store.Fake).seal\n"
 	if code != 2 || stdout != "" || stderr != want {
 		t.Errorf("callers seal: exit %d, stdout %q, stderr:\n%s\nwant exit 2, stderr:\n%s", code, stdout, stderr, want)
 	}
@@ -120,14 +120,14 @@ func TestCallersJSON(t *testing.T) {
 		t.Fatalf("callers --json: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
 	}
 	if code != 0 || out.Function.ID != "(*example.com/simple/store.Store).Get" ||
-		out.Function.Pos != filepath.Join(fixture, "store", "store.go")+":23" {
+		out.Function.Pos != filepath.Join(fixture, "store", "store.go")+":23:17" {
 		t.Errorf("function = %+v, exit %d", out.Function, code)
 	}
 	if len(out.Sites) != 2 {
 		t.Fatalf("sites = %+v, want 2", out.Sites)
 	}
 	direct, iface := out.Sites[0], out.Sites[1]
-	if direct.Kind != "direct" || direct.Pos != filepath.Join(fixture, "main.go")+":17" ||
+	if direct.Kind != "direct" || direct.Pos != filepath.Join(fixture, "main.go")+":17:7" ||
 		direct.From != "example.com/simple.main" || direct.Line != "u := s.Get(1)" ||
 		direct.CallKind != "static" || len(direct.Args) != 1 {
 		t.Errorf("direct site = %+v", direct)
