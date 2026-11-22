@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -135,5 +138,58 @@ func TestCallersJSON(t *testing.T) {
 	if iface.Kind != "interface" || iface.Via != "example.com/simple/store.Getter" ||
 		iface.Callee != "(example.com/simple/store.Getter).Get" || iface.CallKind != "interface" {
 		t.Errorf("interface site = %+v", iface)
+	}
+}
+
+// --json says where positions are relative to, and which declaration a
+// closure site is written in.
+func TestCallersJSONBaseAndDecl(t *testing.T) {
+	t.Parallel()
+	stdout, stderr, code := run(t, "callers", "--format", "json", "greet", fixture)
+	var out callersJSON
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil || code != 0 {
+		t.Fatalf("callers --format json greet: exit %d, %v\nstderr: %s", code, err, stderr)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Base != filepath.ToSlash(wd) {
+		t.Errorf("base = %s, want the working directory, %s", out.Base, filepath.ToSlash(wd))
+	}
+	decls := map[string]string{}
+	for _, s := range out.Sites {
+		decls[s.From] = s.FromDecl
+	}
+	want := map[string]string{
+		"example.com/simple.main$1":         "example.com/simple.main", // greet("closure") in func(){…}()
+		"example.com/simple.main":           "",
+		"example.com/simple.init@main.go#1": "",
+		"example.com/simple.init@main.go#2": "",
+	}
+	if !maps.Equal(decls, want) {
+		t.Errorf("fromDecl by from = %v, want %v", decls, want)
+	}
+}
+
+// A format the command doesn't print, or --json with --format, is an
+// error, before anything is loaded.
+func TestCallersFormatErrors(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		args []string
+		want string // in the error
+	}{
+		{[]string{"--format", "mermaid"}, "--format mermaid: callers prints text or json"},
+		{[]string{"--json", "--format", "text"}, "[format json] were all set"},
+	} {
+		root := newRootCmd(&app{})
+		root.SetArgs(append(append([]string{"callers"}, tc.args...), "greet", fixture))
+		root.SetOut(io.Discard)
+		root.SetErr(io.Discard)
+		err := root.ExecuteContext(t.Context())
+		if ExitCode(err) != 2 || err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("callers %v: err %v; want exit 2 and %q", tc.args, err, tc.want)
+		}
 	}
 }

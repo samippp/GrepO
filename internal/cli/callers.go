@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +17,10 @@ import (
 )
 
 func newCallersCmd(a *app) *cobra.Command {
-	var asJSON, direct bool
+	var (
+		direct  bool
+		formats *formatFlag
+	)
 
 	cmd := &cobra.Command{
 		Use:   "callers <function> [path | github-link]",
@@ -49,6 +53,10 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 		Args:        cobra.RangeArgs(1, 2),
 		Annotations: map[string]string{quiet: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := formats.get(cmd)
+			if err != nil {
+				return err
+			}
 			where := "."
 			if len(args) == 2 {
 				where = args[1]
@@ -79,7 +87,7 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 			}
 
 			out := cmd.OutOrStdout()
-			if asJSON {
+			if format == "json" {
 				err = printCallersJSON(out, p, fn, sites)
 			} else {
 				err = printCallers(out, p, sites)
@@ -94,7 +102,7 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print the function and its sites as one JSON object")
+	formats = addFormatFlags(cmd, "text", "json")
 	cmd.Flags().BoolVar(&direct, "direct", false, "only direct calls: no calls through interfaces or func values")
 	return cmd
 }
@@ -132,16 +140,20 @@ func printCallers(w io.Writer, p *printer, sites []query.Site) error {
 
 // callersJSON is --json's output: IDs in full, positions as printed.
 type callersJSON struct {
+	Base     string         `json:"base"` // the absolute directory positions are relative to
 	Function graph.Function `json:"function"`
 	Sites    []siteJSON     `json:"sites"`
 }
 
 type siteJSON struct {
-	Kind query.Kind `json:"kind"`           // direct, interface, local or value
-	Pos  string     `json:"pos"`            // path:line:col, relative to the current directory
-	From string     `json:"from"`           // the function the site is in, or the package for package-level code
-	Via  string     `json:"via,omitempty"`  // interface: its ID; value: the function it's passed to, or the field or var it's stored in
-	Line string     `json:"line,omitempty"` // the source line, trimmed
+	Kind query.Kind `json:"kind"` // direct, interface, local or value
+	Pos  string     `json:"pos"`  // path:line:col, relative to the current directory
+	From string     `json:"from"` // the function the site is in, or the package for package-level code
+	// FromDecl is the declaration a closure From is written in: a declared
+	// function, or the package var it initializes.
+	FromDecl string `json:"fromDecl,omitempty"`
+	Via      string `json:"via,omitempty"`  // interface: its ID; value: the function it's passed to, or the field or var it's stored in
+	Line     string `json:"line,omitempty"` // the source line, trimmed
 
 	// The call at the site, if any.
 	Callee   string         `json:"callee,omitempty"`
@@ -155,12 +167,12 @@ type siteJSON struct {
 }
 
 func printCallersJSON(w io.Writer, p *printer, fn *graph.Function, sites []query.Site) error {
-	out := callersJSON{Function: *fn, Sites: []siteJSON{}}
+	out := callersJSON{Base: filepath.ToSlash(p.rg.base), Function: *fn, Sites: []siteJSON{}}
 	if fn.Pos != "" { // "" outside the repo
 		out.Function.Pos = p.path(fn.Pos)
 	}
 	for _, s := range sites {
-		js := siteJSON{Kind: s.Kind, Pos: p.path(s.Pos), From: s.From, Via: s.Via, Line: p.line(s.Pos)}
+		js := siteJSON{Kind: s.Kind, Pos: p.path(s.Pos), From: s.From, FromDecl: p.rg.ix.Decl(s.From), Via: s.Via, Line: p.line(s.Pos)}
 		if c := s.Call; c != nil {
 			js.Callee, js.CallKind, js.Args, js.Through, js.Stmt, js.Funcs = c.Callee, c.CallKind, c.Args, c.Through, c.Stmt, c.Funcs
 		}

@@ -285,3 +285,26 @@ func TestShort(t *testing.T) {
 		}
 	}
 }
+
+// Decl climbs a closure's Parent chain to the declaration it's written in.
+func TestDecl(t *testing.T) {
+	pg := &graph.PackageGraph{Packages: []graph.Package{{Path: app, Name: "main"}}}
+	cg := &graph.CallGraph{Functions: []graph.Function{
+		{ID: idMain, Name: "main", Package: app},
+		{ID: idMain + "$1", Name: "main$1", Package: app, Parent: idMain},
+		{ID: idMain + "$1$1", Name: "main$1$1", Package: app, Parent: idMain + "$1"},
+		{ID: app + ".hooks$1", Name: "hooks$1", Package: app, Parent: app + ".hooks"}, // var hooks = func() {…}
+	}}
+	ix := New(pg, cg)
+	for id, want := range map[string]string{
+		idMain + "$1":    idMain,
+		idMain + "$1$1":  idMain, // nested: the declared function, not the closure around it
+		app + ".hooks$1": app + ".hooks",
+		idMain:           "", // not a closure
+		app:              "", // package-level code
+	} {
+		if got := ix.Decl(id); got != want {
+			t.Errorf("Decl(%s) = %q, want %q", id, got, want)
+		}
+	}
+}

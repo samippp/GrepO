@@ -9,8 +9,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/samippp/grepo/internal/graph"
 	"github.com/samippp/grepo/internal/query"
@@ -18,6 +21,35 @@ import (
 
 // quiet is the annotation a query command sets to hide Info logs unless -v.
 const quiet = "quiet"
+
+// formatFlag is a query command's --format, with --json short for --format
+// json (docs/output.md, Formats).
+type formatFlag struct {
+	format  string
+	json    bool
+	offered []string // what the command prints, text first
+}
+
+// addFormatFlags adds --format and --json to cmd, which prints the formats
+// offered.
+func addFormatFlags(cmd *cobra.Command, offered ...string) *formatFlag {
+	f := &formatFlag{offered: offered}
+	cmd.Flags().StringVar(&f.format, "format", offered[0], "output format: "+strings.Join(offered, ", "))
+	cmd.Flags().BoolVar(&f.json, "json", false, "short for --format json")
+	cmd.MarkFlagsMutuallyExclusive("format", "json")
+	return f
+}
+
+// get is the format asked for, or an error naming what cmd prints.
+func (f *formatFlag) get(cmd *cobra.Command) (string, error) {
+	if f.json {
+		return "json", nil
+	}
+	if !slices.Contains(f.offered, f.format) {
+		return "", fmt.Errorf("--format %s: %s prints %s", f.format, cmd.Name(), strings.Join(f.offered, " or "))
+	}
+	return f.format, nil
+}
 
 // repoGraph is a repo loaded for queries.
 type repoGraph struct {
