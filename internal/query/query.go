@@ -88,6 +88,24 @@ func (ix *Index) add(f *graph.Function) {
 // for package-level code.
 func (ix *Index) IsPackage(id string) bool { return ix.repo[id] }
 
+// Decl is the declaration closure id is written in: the declared function at
+// the top of its Parent chain, or the package var it initializes. It's ""
+// for anything but a closure.
+func (ix *Index) Decl(id string) string {
+	f := ix.funcs[id]
+	if f == nil || f.Parent == "" {
+		return ""
+	}
+	for f.Parent != "" {
+		p, ok := ix.funcs[f.Parent]
+		if !ok {
+			return f.Parent // a package var
+		}
+		f = p
+	}
+	return f.ID
+}
+
 // NotFoundError is a name no function has, in the repo or called from it.
 type NotFoundError struct{ Name, Module string }
 
