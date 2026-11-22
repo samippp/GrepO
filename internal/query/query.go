@@ -23,7 +23,11 @@ type Index struct {
 	outside  map[string][]*graph.Function      // functions outside the repo that it names, by Name
 	methods  map[method]string                 // method IDs, interface methods included
 	byCallee map[string][]*graph.FunctionCall  // calls with a known callee
+	byCaller map[string][]*graph.FunctionCall  // calls, by the function they're in
+	stores   map[string][]*graph.Access        // accesses that store a function, by accessor
+	types    map[string]*graph.Type            // repo types, by ID
 	impls    map[string][]graph.Implementation // by concrete type ID
+	ifaces   map[string][]graph.Implementation // by interface ID
 	promoted map[string][]graph.Implementation // by the function ID of a method promoted for them
 }
 
@@ -41,7 +45,11 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		outside:  map[string][]*graph.Function{},
 		methods:  map[method]string{},
 		byCallee: map[string][]*graph.FunctionCall{},
+		byCaller: map[string][]*graph.FunctionCall{},
+		stores:   map[string][]*graph.Access{},
+		types:    map[string]*graph.Type{},
 		impls:    map[string][]graph.Implementation{},
+		ifaces:   map[string][]graph.Implementation{},
 		promoted: map[string][]graph.Implementation{},
 	}
 	for _, p := range pg.Packages {
@@ -64,12 +72,23 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		ix.outside[f.Name] = append(ix.outside[f.Name], f)
 	}
 	for i := range cg.Calls {
-		if c := &cg.Calls[i]; c.Callee != "" {
+		c := &cg.Calls[i]
+		if c.Callee != "" {
 			ix.byCallee[c.Callee] = append(ix.byCallee[c.Callee], c)
 		}
+		ix.byCaller[c.Caller] = append(ix.byCaller[c.Caller], c)
+	}
+	for i := range cg.Accesses {
+		if a := &cg.Accesses[i]; a.Func != "" {
+			ix.stores[a.Accessor] = append(ix.stores[a.Accessor], a)
+		}
+	}
+	for i := range cg.Types {
+		ix.types[cg.Types[i].ID] = &cg.Types[i]
 	}
 	for _, im := range cg.Implementations {
 		ix.impls[im.Type] = append(ix.impls[im.Type], im)
+		ix.ifaces[im.Interface] = append(ix.ifaces[im.Interface], im)
 		for _, id := range im.Promoted {
 			ix.promoted[id] = append(ix.promoted[id], im)
 		}
@@ -226,6 +245,10 @@ const (
 	Interface Kind = "interface" // calls an interface method its type implements: may run it
 	Local     Kind = "local"     // calls a local it's assigned to: f := s.Get; f()
 	Value     Kind = "value"     // passes or stores it as a func value, which may be called later
+
+	// Callees only.
+	Dynamic        Kind = "dynamic"        // calls a func value nothing resolves
+	Implementation Kind = "implementation" // a method an interface call can run, at its declaration
 )
 
 var kindOrder = map[Kind]int{Direct: 0, Interface: 1, Local: 2, Value: 3}
@@ -242,6 +265,11 @@ type Site struct {
 
 	Call   *graph.FunctionCall // the call at the site; nil when a value is stored
 	Access *graph.Access       // a value stored: the write
+
+	// Callees: the function the site reaches (the callee, a local's
+	// candidate, the function passed or stored, the implementation); "" for
+	// a dynamic call.
+	Target string
 }
 
 // Callers returns every site that can reach fn: direct calls, then calls
