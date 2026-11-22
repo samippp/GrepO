@@ -27,6 +27,7 @@ func run(t *testing.T, args ...string) (stdout, stderr string, code int) {
 }
 
 func TestCallers(t *testing.T) {
+	t.Parallel()
 	at := func(file string) string { return filepath.Join(fixture, filepath.FromSlash(file)) }
 	for _, tc := range []struct {
 		args []string
@@ -70,21 +71,25 @@ func TestCallers(t *testing.T) {
 		// Not found: an error.
 		{[]string{"Nope"}, nil, 2},
 	} {
-		stdout, stderr, code := run(t, append([]string{"callers"}, append(tc.args, fixture)...)...)
-		got := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
-		if stdout == "" {
-			got = nil
-		}
-		if code != tc.code || strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
-			t.Errorf("callers %v: exit %d, stdout:\n%s\nwant exit %d:\n%s\nstderr: %s",
-				tc.args, code, stdout, tc.code, strings.Join(tc.want, "\n"), stderr)
-		}
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel() // each run loads the fixture on its own
+			stdout, stderr, code := run(t, append([]string{"callers"}, append(tc.args, fixture)...)...)
+			got := strings.Split(strings.TrimSuffix(stdout, "\n"), "\n")
+			if stdout == "" {
+				got = nil
+			}
+			if code != tc.code || strings.Join(got, "\n") != strings.Join(tc.want, "\n") {
+				t.Errorf("callers %v: exit %d, stdout:\n%s\nwant exit %d:\n%s\nstderr: %s",
+					tc.args, code, stdout, tc.code, strings.Join(tc.want, "\n"), stderr)
+			}
+		})
 	}
 }
 
 // An ambiguous name lists its candidates on stderr, each with a name that
 // picks it, and exits with 2; the package in the directory given wins.
 func TestCallersAmbiguous(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, code := run(t, "callers", "seal", fixture)
 	want := "seal matches 3 functions; name one of them:\n" +
 		filepath.Join(fixture, "model", "impls.go") + ":8: (model.Sealed).seal\n" +
@@ -108,6 +113,7 @@ func TestCallersAmbiguous(t *testing.T) {
 }
 
 func TestCallersJSON(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, code := run(t, "callers", "--json", "Store.Get", fixture)
 	var out callersJSON
 	if err := json.Unmarshal([]byte(stdout), &out); err != nil {

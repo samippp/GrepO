@@ -11,6 +11,7 @@ import (
 // analyze's graph from store/ is the module's, positioned from its root, as
 // callers' sites from there are.
 func TestAnalyzeSubdirectory(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, code := run(t, "analyze", "--no-cache", filepath.Join(fixture, "store"))
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr)
@@ -41,6 +42,7 @@ func TestAnalyzeSubdirectory(t *testing.T) {
 // callers from store/ finds the sites in the module root's package, main,
 // both direct and through store.Getter, as it does from the root.
 func TestCallersSubdirectory(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, code := run(t, "callers", "Store.Get", filepath.Join(fixture, "store"))
 	want := filepath.Join(fixture, "main.go") + ":17: main.main: u := s.Get(1)\n" +
 		filepath.Join(fixture, "main.go") + ":20: main.main: g.Get(2)  [via store.Getter]\n"

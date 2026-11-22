@@ -5,8 +5,6 @@
 package graph
 
 import (
-	"context"
-	"log/slog"
 	"slices"
 	"testing"
 
@@ -14,11 +12,7 @@ import (
 )
 
 func TestBuildPackageGraph(t *testing.T) {
-	res, err := load.Load(context.Background(), "testdata/simple", nil, slog.New(slog.DiscardHandler), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g := BuildPackageGraph(res)
+	g := BuildPackageGraph(loadFixture(t))
 
 	if g.Module != "example.com/simple" {
 		t.Errorf("module = %q, want example.com/simple", g.Module)
