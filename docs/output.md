@@ -2,7 +2,7 @@
 
 How every query command prints its answer: `callers` (done), `callees`, `find`, `state`, `pkg`, `entry`, `impact`, and `grepo mcp`. Commands get built to fit these rules, so later ones don't need their own conventions. `analyze` stays as it is: it dumps the whole graph, and isn't a query.
 
-Status: proposal. Section 9 lists what changes before the next command, and section 10 the decisions still open.
+Status: agreed. Section 9 lists what changes before the next command, and section 10 the decisions made.
 
 Examples use the test fixture (`internal/graph/testdata/simple`). Ones marked *sketch* show the shape, not final wording.
 
@@ -149,9 +149,9 @@ One tool per command, with the command's flags as arguments. A result is the com
 3. **`base`** in `callers --json`.
 4. **The tree printer**, written with `callees` and then given to `callers` for `--depth`.
 
-## 10. Open decisions
+## 10. Decisions
 
-- **Columns now?** The test churn above is the cost. Recommended: yes, before more commands print positions.
-- **Tree lines:** position first, with the indent in the message (section 4), or a drawn tree that editors can't read? Recommended: position first.
-- **Order:** results by position (`callers`, `callees`, `state`), and ranked lists (`find`, `pkg` with no path) by use. Is that the right split?
-- **Closures:** keep `$n` IDs in text (recommended), or show the enclosing function with a `[closure]` tag?
+- **Columns now:** yes, before more commands print positions (section 9, item 1).
+- **Tree lines:** position first, with the indent in the message (section 4).
+- **Order:** results by position (`callers`, `callees`, `state`); ranked lists by use (`find`, `pkg` with no path), most used first. On caddy, `find Load` puts `(caddy.Context).LoadModule` (60 callers) first, where by position it would come fifth, behind a `LoadConfig` nothing calls. `| sort` gives position order back.
+- **Closures and inits:** text keeps their IDs (`replaceLocalAdminServer$1$1`, `main.init@main.go#1`), not the enclosing function with a tag. The ID can be passed back as a name, and `$1$1` shows the code runs later (a goroutine or callback), not when its parent runs. JSON adds `fromDecl` (section 6).
