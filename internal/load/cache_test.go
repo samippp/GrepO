@@ -99,6 +99,7 @@ func edit(t *testing.T, path, old, new string) {
 // A load through the store gives what a load without one gives. The next
 // load takes every dependency from it: only repo packages are checked.
 func TestCachedLoad(t *testing.T) {
+	t.Parallel()
 	dir := copyFixture(t)
 	st := openStore(t)
 
@@ -142,6 +143,7 @@ func TestCachedLoad(t *testing.T) {
 // gives, and checks again only what the edit changed (repo packages are
 // always checked).
 func TestCachedLoadAfterEdits(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		edit    func(t *testing.T, dir string)
@@ -168,6 +170,7 @@ func TestCachedLoadAfterEdits(t *testing.T) {
 		}, []string{"example.com/dep", "example.com/dep/wrap"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := copyFixture(t)
 			st := openStore(t)
 			mustLoad(t, dir, st)
@@ -185,6 +188,7 @@ func TestCachedLoadAfterEdits(t *testing.T) {
 // a local replace): their export data holds absolute positions, which would
 // point into the first copy.
 func TestCacheKeyedOnLocation(t *testing.T) {
+	t.Parallel()
 	st := openStore(t)
 	mustLoad(t, copyFixture(t), st)
 	dir := copyFixture(t)
@@ -327,6 +331,7 @@ func pkg(res *Result, path string) *Package {
 // from another named one (borrow.go) doesn't keep it out, as it does a
 // dependency (uncached).
 func TestRepoPackageFromStore(t *testing.T) {
+	t.Parallel()
 	dir := copyFixture(t)
 	st := openStore(t)
 	cold := mustLoad(t, dir, st)
@@ -363,6 +368,7 @@ func TestRepoPackageFromStore(t *testing.T) {
 // Editing a repo package, or a dependency it imports, checks it from source
 // again under a new key.
 func TestRepoPackageFromStoreAfterEdits(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		edit    func(t *testing.T, dir string)
@@ -376,6 +382,7 @@ func TestRepoPackageFromStoreAfterEdits(t *testing.T) {
 		}, []string{"example.com/dep", "example.com/dep/wrap"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			dir := copyFixture(t)
 			st := openStore(t)
 			cold := mustLoad(t, dir, st)
@@ -399,6 +406,7 @@ func TestRepoPackageFromStoreAfterEdits(t *testing.T) {
 // A repo package checked again because its row has no share yet doesn't
 // rewrite the row: its key fixes what's in it.
 func TestSavedRowNotRewritten(t *testing.T) {
+	t.Parallel()
 	dir := copyFixture(t)
 	st := openStore(t)
 	key := pkg(mustLoad(t, dir, st), repoMain).Key

@@ -17,12 +17,54 @@ import (
 
 func openStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "store.db"))
+	return openStoreAt(t, filepath.Join(t.TempDir(), "store.db"))
+}
+
+func openStoreAt(t *testing.T, path string) *store.Store {
+	t.Helper()
+	st, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
 	return st
+}
+
+// filledStores fills a store per way by building testdata/simple through it,
+// and returns their files. Subtests start from a copy (copyStore), so the
+// standard library is checked from source once, not once per subtest. Repo
+// rows are keyed by their files' paths, so a copy of the repo elsewhere
+// still checks and saves its own; testdata/simple itself starts warm.
+func filledStores(t *testing.T) map[bool]string {
+	t.Helper()
+	files := map[bool]string{}
+	for _, way := range ways {
+		path := filepath.Join(t.TempDir(), "store.db")
+		st, err := store.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loadAndBuild(t, st, way.during)
+		if err := st.Close(); err != nil { // checkpoints the WAL into the file
+			t.Fatal(err)
+		}
+		files[way.during] = path
+	}
+	return files
+}
+
+// copyStore opens a copy of the store file at src.
+func copyStore(t *testing.T, src string) *store.Store {
+	t.Helper()
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(t.TempDir(), "store.db")
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return openStoreAt(t, dst)
 }
 
 // ways are the two ways to build a graph: from the Result after the load,
@@ -94,6 +136,7 @@ func TestCallGraphFromStore(t *testing.T) {
 	}
 	for _, way := range ways {
 		t.Run(way.name, func(t *testing.T) {
+			t.Parallel() // each has its own store
 			st := openStore(t)
 			_, cold := loadAndBuild(t, st, way.during)
 			res, warm := loadAndBuild(t, st, way.during)
@@ -116,6 +159,7 @@ func TestCallGraphFromStore(t *testing.T) {
 func TestCallGraphBadShare(t *testing.T) {
 	for _, way := range ways {
 		t.Run(way.name, func(t *testing.T) {
+			t.Parallel() // each has its own store
 			st := openStore(t)
 			res, _ := loadAndBuild(t, st, way.during)
 			bad := res.Packages[0]
@@ -171,10 +215,12 @@ func repoChecked(res *load.Result) []string {
 // its repo imports' types from export data: model's unexported seal method
 // that store's Sealer gets by embedding, its alias ID and const MaxTag.
 func TestCallGraphPartlyFromStore(t *testing.T) {
+	t.Parallel()
 	want, err := json.Marshal(buildFixtureCallGraph(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	filled := filledStores(t)
 	pkgs := []string{mainPkg, modelPkg, storePkg}
 	for set := 1; set < 1<<len(pkgs); set++ {
 		var walk []string
@@ -186,7 +232,7 @@ func TestCallGraphPartlyFromStore(t *testing.T) {
 		for _, way := range ways {
 			t.Run(strings.Join(walk, "+")+", "+way.name, func(t *testing.T) {
 				t.Parallel() // each has its own store
-				st := openStore(t)
+				st := copyStore(t, filled[way.during])
 				cold, _ := loadAndBuild(t, st, way.during)
 				drop := map[string][]byte{}
 				for _, p := range cold.Packages {
@@ -233,6 +279,8 @@ func writeFile(t *testing.T, path, content string) {
 // After each edit, a build through the store matches one without it, and
 // checks only the edited packages and those importing them.
 func TestCallGraphFromStoreAfterEdits(t *testing.T) {
+	t.Parallel()
+	filled := filledStores(t)
 	all := []string{mainPkg, modelPkg, storePkg}
 	for _, tc := range []struct {
 		name    string
@@ -269,28 +317,37 @@ func TestCallGraphFromStoreAfterEdits(t *testing.T) {
 			writeFile(t, filepath.Join(dir, "store/never.go"), "//go:build never\n\npackage store\n\nfunc Never() {}\n")
 		}, nil},
 	} {
-		for _, way := range ways {
-			t.Run(tc.name+", "+way.name, func(t *testing.T) {
-				t.Parallel() // each has its own copy and store
-				dir := copySimple(t)
-				st := openStore(t)
-				buildDir(t, dir, st, way.during)
-				tc.edit(t, dir)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// The graph without a store, of an edited copy of its own: both
+			// ways compare with it. Positions are relative, so the copy's
+			// directory doesn't matter.
+			ref := copySimple(t)
+			tc.edit(t, ref)
+			_, want := buildDir(t, ref, nil, false)
 
-				res, got := buildDir(t, dir, st, way.during)
-				if checked := repoChecked(res); !slices.Equal(checked, tc.checked) {
-					t.Errorf("checked %v, want %v", checked, tc.checked)
-				}
-				for _, p := range res.Packages {
-					if len(p.Errors) > 0 {
-						t.Fatalf("the edit broke %s: %v", p.PkgPath, p.Errors)
+			for _, way := range ways {
+				t.Run(way.name, func(t *testing.T) {
+					t.Parallel() // each has its own copy and store
+					dir := copySimple(t)
+					st := copyStore(t, filled[way.during])
+					buildDir(t, dir, st, way.during)
+					tc.edit(t, dir)
+
+					res, got := buildDir(t, dir, st, way.during)
+					if checked := repoChecked(res); !slices.Equal(checked, tc.checked) {
+						t.Errorf("checked %v, want %v", checked, tc.checked)
 					}
-				}
-				_, want := buildDir(t, dir, nil, false)
-				if !bytes.Equal(got, want) {
-					t.Error("the graph built through the store differs from one without it")
-				}
-			})
-		}
+					for _, p := range res.Packages {
+						if len(p.Errors) > 0 {
+							t.Fatalf("the edit broke %s: %v", p.PkgPath, p.Errors)
+						}
+					}
+					if !bytes.Equal(got, want) {
+						t.Error("the graph built through the store differs from one without it")
+					}
+				})
+			}
+		})
 	}
 }

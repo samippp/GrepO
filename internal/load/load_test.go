@@ -21,9 +21,11 @@ var fixtures = []string{"../graph/testdata/simple", "testdata/mod"}
 // fromGoList matches go/packages: the same packages, files, imports and
 // errors, and every identifier, selection and expression typed the same.
 func TestFromGoListMatchesGoPackages(t *testing.T) {
+	t.Parallel()
 	log := slog.New(slog.DiscardHandler)
 	for _, dir := range fixtures {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
+			t.Parallel()
 			want, _, err := GoPackages(t.Context(), dir, log)
 			if err != nil {
 				t.Fatal(err)
@@ -52,6 +54,7 @@ func TestFromGoListMatchesGoPackages(t *testing.T) {
 // Repo is the Result's packages, and Standard the standard library's among
 // what was loaded, as go list says: never the repo's or a dependency's.
 func TestRepoAndStandard(t *testing.T) {
+	t.Parallel()
 	log := slog.New(slog.DiscardHandler)
 	res, err := fromGoList(t.Context(), "testdata/mod", nil, log, nil)
 	if err != nil {
@@ -74,6 +77,7 @@ func TestRepoAndStandard(t *testing.T) {
 // Stdlib positions read $GOROOT/src/..., as in compiler export data, whatever
 // the install path: a type defined from a stdlib struct shows its fields'.
 func TestStdlibPositions(t *testing.T) {
+	t.Parallel()
 	log := slog.New(slog.DiscardHandler)
 	viaPackages, _, err := GoPackages(t.Context(), "testdata/mod", log)
 	if err != nil {
@@ -232,6 +236,7 @@ func diff(t *testing.T, got, want []string) {
 // A walk sees each repo package once, whole, with every repo path in repo;
 // Load drops the package's syntax and type information after it.
 func TestWalk(t *testing.T) {
+	t.Parallel()
 	log := slog.New(slog.DiscardHandler)
 	var mu sync.Mutex
 	walked := map[string]int{}
@@ -270,6 +275,7 @@ func TestWalk(t *testing.T) {
 // A repo package from the store reaches the walk too, with its share and no
 // syntax; Load drops the share after.
 func TestWalkFromStore(t *testing.T) {
+	t.Parallel()
 	dir := copyFixture(t)
 	st := openStore(t)
 	saveShares(t, st, mustLoad(t, dir, st))
