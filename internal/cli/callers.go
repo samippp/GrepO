@@ -1,5 +1,5 @@
 // callers.go implements `grepo callers`: loadModule → Index.Func →
-// Index.Callers → one line per site, or --json.
+// Index.CallerTree → a line per site, children indented, or --json.
 
 package cli
 
@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -18,12 +19,13 @@ import (
 func newCallersCmd(a *app) *cobra.Command {
 	var (
 		direct  bool
+		depth   int
 		formats *formatFlag
 	)
 
 	cmd := &cobra.Command{
 		Use:   "callers <function> [path | github-link]",
-		Short: "Every site that can call a function, through interfaces too",
+		Short: "Every site that can call a function, through interfaces too, as a tree with --depth",
 		Long: `Callers prints every site that can call a function: direct calls, calls
 through an interface its type implements, and places it's passed or stored
 as a func value. One site per line, grep-style:
@@ -32,8 +34,13 @@ as a func value. One site per line, grep-style:
 
 Direct calls come first, then [via Interface], then [through a local]
 (f := s.Get; f()), then [passed to f] and [stored in field]; each group
-by position. Paths are relative to the
-current directory.
+by position. Paths are relative to the current directory.
+
+--depth n follows n levels (0: all the way): under each site, the sites
+that can call the function it's in, indented after the position. A
+function already expanded is marked [see above], and one in the path
+above [recursive]. Package-level code isn't followed. --direct applies
+at every level.
 
 The function is named as in Go, qualified as much as needed: Get,
 Store.Get, (*Store).Get, store.Store.Get, or a path suffix such as
@@ -48,6 +55,7 @@ The whole module is loaded from source each time, for now.
 Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 		Example: `  grepo callers Store.Get
   grepo callers '(*Server).ServeHTTP' ./modules/caddyhttp
+  grepo callers --depth 3 --direct caddy.Load
   grepo callers --json caddy.Load https://github.com/caddyserver/caddy`,
 		Args:        cobra.RangeArgs(1, 2),
 		Annotations: map[string]string{quiet: "true"},
@@ -55,6 +63,9 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 			format, err := formats.get(cmd)
 			if err != nil {
 				return err
+			}
+			if depth < 0 {
+				return fmt.Errorf("--depth %d: want 0 (all the way) or more", depth)
 			}
 			where := "."
 			if len(args) == 2 {
@@ -74,27 +85,17 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 				return err
 			}
 
-			sites := rg.ix.Callers(fn)
-			if direct {
-				var kept []query.Site
-				for _, s := range sites {
-					if s.Kind == query.Direct {
-						kept = append(kept, s)
-					}
-				}
-				sites = kept
-			}
-
+			nodes := rg.ix.CallerTree(fn, depth, direct)
 			out := cmd.OutOrStdout()
 			if format == "json" {
-				err = printCallersJSON(out, p, fn, sites)
+				err = writeJSON(out, callersJSON{Base: filepath.ToSlash(rg.base), Function: p.function(fn), Sites: p.nodesJSON(nodes)})
 			} else {
-				err = printCallers(out, p, sites)
+				err = printCallers(out, p, nodes, 0)
 			}
 			if err != nil {
 				return err
 			}
-			if len(sites) == 0 {
+			if len(nodes) == 0 {
 				return errNoResults
 			}
 			return nil
@@ -102,31 +103,46 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 	}
 
 	formats = addFormatFlags(cmd, "text", "json")
-	cmd.Flags().BoolVar(&direct, "direct", false, "only direct calls: no calls through interfaces or func values")
+	cmd.Flags().IntVar(&depth, "depth", 1, "levels to follow; 0 for all the way")
+	cmd.Flags().BoolVar(&direct, "direct", false, "only direct calls, at every level: no calls through interfaces or func values")
 	return cmd
 }
 
-// printCallers prints one site per line: path:line:col: from: source line  [how].
-func printCallers(w io.Writer, p *printer, sites []query.Site) error {
+// printCallers prints a line per node, path:line:col: from: source line  [how],
+// children indented after the position.
+func printCallers(w io.Writer, p *printer, nodes []*query.Node, level int) error {
 	ix := p.rg.ix
-	for _, s := range sites {
-		from := ix.Short(s.From)
-		if ix.IsPackage(s.From) {
+	for _, n := range nodes {
+		from := ix.Short(n.From)
+		if ix.IsPackage(n.From) {
 			from += " (package level)"
 		}
-		text := p.path(s.Pos) + ": " + from
-		if line := p.line(s.Pos); line != "" {
+		text := p.path(n.Pos) + ": " + strings.Repeat("  ", level) + from
+		if line := p.line(n.Pos); line != "" {
 			text += ": " + line
 		}
-		switch {
-		case s.Kind == query.Interface:
-			text += "  [via " + ix.Short(s.Via) + "]"
-		case s.Kind == query.Local:
-			text += "  [through a local]"
-		case s.Kind == query.Value:
-			text += "  [" + p.valueTag(s) + "]"
+		var how []string
+		switch n.Kind {
+		case query.Interface:
+			how = append(how, "via "+ix.Short(n.Via))
+		case query.Local:
+			how = append(how, "through a local")
+		case query.Value:
+			how = append(how, p.valueTag(n.Site))
+		}
+		if n.Seen {
+			how = append(how, "see above")
+		}
+		if n.Recursive {
+			how = append(how, "recursive")
+		}
+		if len(how) > 0 {
+			text += "  [" + strings.Join(how, ", ") + "]"
 		}
 		if _, err := fmt.Fprintln(w, text); err != nil {
+			return err
+		}
+		if err := printCallers(w, p, n.Children, level+1); err != nil {
 			return err
 		}
 	}
@@ -138,12 +154,4 @@ type callersJSON struct {
 	Base     string         `json:"base"` // the absolute directory positions are relative to
 	Function graph.Function `json:"function"`
 	Sites    []siteJSON     `json:"sites"`
-}
-
-func printCallersJSON(w io.Writer, p *printer, fn *graph.Function, sites []query.Site) error {
-	out := callersJSON{Base: filepath.ToSlash(p.rg.base), Function: p.function(fn), Sites: []siteJSON{}}
-	for _, s := range sites {
-		out.Sites = append(out.Sites, p.siteJSON(s))
-	}
-	return writeJSON(w, out)
 }

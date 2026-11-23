@@ -47,6 +47,7 @@ func calleesIndex() *Index {
 		},
 		Accesses: []graph.Access{
 			{Accessor: idMain, Target: tStore + ".onGet", Pos: "main.go:11:2", Kind: graph.AssignAccess, Func: idGet},
+			{Accessor: app, Target: app + ".hook", Pos: "vars.go:3:5", Kind: graph.AssignAccess, Func: idGet},
 		},
 		Implementations: []graph.Implementation{
 			{Type: tStore, Interface: tGetter, PointerOnly: true},
@@ -165,6 +166,70 @@ func TestCalleeTree(t *testing.T) {
 		}},
 	} {
 		if got := renderTree(ix.CalleeTree(main, tc.depth, tc.direct), ""); !slices.Equal(got, tc.want) {
+			t.Errorf("%s:\ngot\n%s\nwant\n%s", tc.name, strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+		}
+	}
+}
+
+// A caller site expands its From; package-level code is a leaf.
+func TestCallerTree(t *testing.T) {
+	ix := calleesIndex()
+	get, _ := ix.Func(idGet, "")
+	render := func(nodes []*Node) []string {
+		var lines []string
+		var walk func([]*Node, string)
+		walk = func(nodes []*Node, indent string) {
+			for _, n := range nodes {
+				l := indent + string(n.Kind) + " " + n.Pos + " " + n.From
+				if n.Seen {
+					l += " [see above]"
+				}
+				if n.Recursive {
+					l += " [recursive]"
+				}
+				lines = append(lines, l)
+				walk(n.Children, indent+"  ")
+			}
+		}
+		walk(nodes, "")
+		return lines
+	}
+	for _, tc := range []struct {
+		name   string
+		depth  int
+		direct bool
+		want   []string
+	}{
+		{"one level", 1, false, []string{
+			"direct main.go:6:7 " + idMain,
+			"direct main.go:31:3 " + idMain + "$1",
+			"interface main.go:7:2 " + idMain,
+			"local main.go:8:2 " + idMain,
+			"value main.go:11:2 " + idMain,
+			"value vars.go:3:5 " + app,
+		}},
+		{"all the way", 0, false, []string{
+			"direct main.go:6:7 " + idMain, // no callers: a leaf
+			"direct main.go:31:3 " + idMain + "$1",
+			"  direct main.go:22:2 " + idHandle,
+			"    direct main.go:21:2 " + idHandle + " [recursive]",
+			"    local main.go:8:2 " + idMain,
+			"    value main.go:10:2 " + idMain,
+			"  direct main.go:30:2 " + idMain,
+			"interface main.go:7:2 " + idMain,
+			"local main.go:8:2 " + idMain,
+			"value main.go:11:2 " + idMain,
+			"value vars.go:3:5 " + app, // package level: a leaf
+		}},
+		{"all the way, direct only", 0, true, []string{
+			"direct main.go:6:7 " + idMain,
+			"direct main.go:31:3 " + idMain + "$1",
+			"  direct main.go:22:2 " + idHandle,
+			"    direct main.go:21:2 " + idHandle + " [recursive]",
+			"  direct main.go:30:2 " + idMain,
+		}},
+	} {
+		if got := render(ix.CallerTree(get, tc.depth, tc.direct)); !slices.Equal(got, tc.want) {
 			t.Errorf("%s:\ngot\n%s\nwant\n%s", tc.name, strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
 		}
 	}

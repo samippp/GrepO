@@ -35,7 +35,7 @@ grepo pkg --format mermaid     # the package graph, as a diagram for an issue or
 
 **M2a (paused): incremental store.** `analyze` reuses each unchanged package's share of the graph from a SQLite store in your user cache directory; `--no-cache` skips it. Paused while the commands settle what the store should keep.
 
-**M3 (in progress): commands.** `grepo callers <function>` prints every site that can call a function: direct calls, calls through an interface it implements (`io.Writer` and `error` too), and places it's passed or stored as a func value. Commands load the repo from source each time, for now.
+**M3 (in progress): commands.** `grepo callers <function>` prints every site that can call a function: direct calls, calls through an interface it implements (`io.Writer` and `error` too), and places it's passed or stored as a func value; `--depth n` follows callers' callers as a tree. `grepo callees <function>` is the other way. Commands load the repo from source each time, for now.
 
 ## Usage
 
@@ -48,6 +48,7 @@ cd path/to/repo
 grepo callers Store.Get                          # path:line:col: calling function: source line
 grepo callers --json '(*Server).Serve' ./server  # JSON; ./server's package wins a tie
 grepo callers os.Exit                            # functions outside the repo work too
+grepo callers --depth 3 Store.Get                # callers' callers, indented, 3 levels
 ```
 
 ```
@@ -140,8 +141,8 @@ Milestone numbers are kept as they were, so references in issues and the docs st
   - order: `callers`, `callees`, `find`, `state`, `pkg`, `entry`, `impact`, then `grepo mcp`; each loads from source until the store keeps what they read
   - Working in code:
     - `state <type|var>`: who writes each field or var, by kind, with a role (config, live state, counter, no writes found)
-    - `callers <func>`: every site that can call it, directly, through an interface it implements or as a func value; functions outside the repo too (`os.Exit`) ✅
-    - `callees <func>`: every call and func value in it, `--depth n` for a tree expanding interface calls into their implementations ✅; `callers --depth` next
+    - `callers <func>`: every site that can call it, directly, through an interface it implements or as a func value; functions outside the repo too (`os.Exit`); `--depth n` for a tree of callers' callers ✅
+    - `callees <func>`: every call and func value in it, `--depth n` for a tree expanding interface calls into their implementations ✅
     - `impact <symbol>`: everything that reaches it through calls and writes, rolled up by package
   - Finding your way:
     - `pkg [path]`: imports and imported-by, exported API ranked by callers, owned state and its writers, outside calls; with no path, the repo's packages ranked by how central they are
