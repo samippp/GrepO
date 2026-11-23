@@ -23,8 +23,8 @@ type Index struct {
 	outside  map[string][]*graph.Function      // functions outside the repo that it names, by Name
 	methods  map[method]string                 // method IDs, interface methods included
 	byCallee map[string][]*graph.FunctionCall  // calls with a known callee
-	byCaller map[string][]*graph.FunctionCall  // calls, by the function they're in
-	stores   map[string][]*graph.Access        // accesses that store a function, by accessor
+	byCaller map[string][]*graph.FunctionCall  // calls, by caller
+	stores   map[string][]*graph.Access        // accesses storing a function, by accessor
 	types    map[string]*graph.Type            // repo types, by ID
 	impls    map[string][]graph.Implementation // by concrete type ID
 	ifaces   map[string][]graph.Implementation // by interface ID
@@ -107,9 +107,8 @@ func (ix *Index) add(f *graph.Function) {
 // for package-level code.
 func (ix *Index) IsPackage(id string) bool { return ix.repo[id] }
 
-// Decl is the declaration closure id is written in: the declared function at
-// the top of its Parent chain, or the package var it initializes. It's ""
-// for anything but a closure.
+// Decl is the declared function or package var closure id is written in;
+// "" if id isn't a closure.
 func (ix *Index) Decl(id string) string {
 	f := ix.funcs[id]
 	if f == nil || f.Parent == "" {
@@ -247,8 +246,8 @@ const (
 	Value     Kind = "value"     // passes or stores it as a func value, which may be called later
 
 	// Callees only.
-	Dynamic        Kind = "dynamic"        // calls a func value nothing resolves
-	Implementation Kind = "implementation" // a method an interface call can run, at its declaration
+	Dynamic        Kind = "dynamic"        // a func value nothing resolves
+	Implementation Kind = "implementation" // a method an interface call can run
 )
 
 var kindOrder = map[Kind]int{Direct: 0, Interface: 1, Local: 2, Value: 3}
@@ -266,10 +265,7 @@ type Site struct {
 	Call   *graph.FunctionCall // the call at the site; nil when a value is stored
 	Access *graph.Access       // a value stored: the write
 
-	// Callees: the function the site reaches (the callee, a local's
-	// candidate, the function passed or stored, the implementation); "" for
-	// a dynamic call.
-	Target string
+	Target string // callees: the function reached; "" if dynamic
 }
 
 // Callers returns every site that can reach fn: direct calls, then calls

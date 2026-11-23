@@ -1,5 +1,5 @@
-// callees.go implements `grepo callees`: loadModule → Index.Func →
-// Index.CalleeTree → one line per site, indented by level, or --json.
+// callees.go implements `grepo callees`: Index.CalleeTree, printed as an
+// indented list or --json.
 
 package cli
 
@@ -102,15 +102,14 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 	return cmd
 }
 
-// calleesJSON is --json's output: the function, and its callees as a tree.
+// calleesJSON is --json's output.
 type calleesJSON struct {
 	Base     string         `json:"base"`
 	Function graph.Function `json:"function"`
 	Callees  []siteJSON     `json:"callees"`
 }
 
-// printCallees prints one line per node, its children indented under it:
-// path:line:col: indent function: source line  [how].
+// printCallees prints a line per node, children indented.
 func printCallees(w io.Writer, p *printer, nodes []*query.Node, level int) error {
 	for _, n := range nodes {
 		if _, err := fmt.Fprintln(w, calleeLine(p, n, level)); err != nil {
@@ -128,12 +127,12 @@ func calleeLine(p *printer, n *query.Node, level int) string {
 	name := ix.Short(n.Target)
 	if n.Kind == query.Dynamic {
 		name = "(func value)"
-		if n.Call.Through != "" { // r.onDone(): the field it's called through
+		if n.Call.Through != "" { // r.onDone()
 			name = ix.Short(n.Call.Through)
 		}
 	}
 	text := p.path(n.Pos) + ": " + strings.Repeat("  ", level) + name
-	if n.Kind != query.Implementation { // a declaration: its line is the signature
+	if n.Kind != query.Implementation { // a declaration
 		if line := p.line(n.Pos); line != "" {
 			text += ": " + line
 		}

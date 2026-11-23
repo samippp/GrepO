@@ -1,5 +1,4 @@
-// callees.go: what a function reaches, and trees of it (docs/output.md,
-// Trees).
+// callees.go: what a function reaches, and trees of it.
 
 package query
 
@@ -11,9 +10,7 @@ import (
 )
 
 // Callees returns every site in fn that reaches a function, by position:
-// its calls (static, through an interface, through a local, one site per
-// candidate; or dynamic, when nothing resolves it), and the functions it
-// passes or stores as values, which may be called later.
+// calls (a site per local's candidate) and functions passed or stored.
 func (ix *Index) Callees(fn *graph.Function) []Site {
 	var sites []Site
 	for _, c := range ix.byCaller[fn.ID] {
@@ -46,16 +43,13 @@ func (ix *Index) Callees(fn *graph.Function) []Site {
 	for _, a := range ix.stores[fn.ID] {
 		sites = append(sites, Site{Kind: Value, Pos: a.Pos, From: fn.ID, Via: a.Target, Access: a, Target: a.Func})
 	}
-	// Stable: a call stays before the values passed to it.
+	// Stable: a call stays before its values.
 	slices.SortStableFunc(sites, func(a, b Site) int { return comparePos(a.Pos, b.Pos) })
 	return sites
 }
 
 // Implementations returns the methods a call to interface method m can run,
-// one site per method, by position: for each type implementing m's
-// interface, its method of that name, or the one promoted to it. A method
-// outside the repo (promoted from an embedded *os.File) is located at the
-// first type it's promoted to.
+// by position. One promoted from outside the repo is at its type.
 func (ix *Index) Implementations(m string) []Site {
 	im := ix.funcs[m]
 	if im == nil || im.Owner == "" {
@@ -87,21 +81,20 @@ func (ix *Index) Implementations(m string) []Site {
 	return sites
 }
 
-// Node is a site in a tree, with the sites under it.
+// Node is a site in a tree.
 type Node struct {
 	Site
 	Children  []*Node
-	Seen      bool // its function was expanded earlier in the tree: children left out
-	Recursive bool // its function is on the path above it: children left out
+	Seen      bool // expanded earlier: no children
+	Recursive bool // on the path above: no children
 }
 
-// CalleeTree is fn's callees and theirs, depth levels down (0: all the way).
-// An interface call's children are the methods it can run (Implementations),
-// and functions outside the repo are leaves. With direct, only static calls.
+// CalleeTree is fn's callees, depth levels down (0: all). An interface
+// call's children are its Implementations; direct keeps static calls.
 func (ix *Index) CalleeTree(fn *graph.Function, depth int, direct bool) []*Node {
 	callees := func(id string) []Site {
 		f := ix.funcs[id]
-		if f == nil || f.Pos == "" { // outside the repo: its calls aren't in the graph
+		if f == nil || f.Pos == "" { // outside the repo
 			return nil
 		}
 		sites := ix.Callees(f)
@@ -127,13 +120,11 @@ func (ix *Index) CalleeTree(fn *graph.Function, depth int, direct bool) []*Node 
 	return t.nodes(callees(fn.ID), 1)
 }
 
-// tree builds Nodes depth-first. A site's function (its Target) is expanded
-// once: later sites reaching it are Seen, and one reaching a function on the
-// path above it is Recursive.
+// tree builds Nodes depth-first, expanding each Target once.
 type tree struct {
 	depth    int
 	children func(Site) []Site
-	path     map[string]bool // functions being expanded, from the root down
+	path     map[string]bool // being expanded
 	expanded map[string]bool
 }
 
@@ -144,9 +135,9 @@ func (t *tree) nodes(sites []Site, level int) []*Node {
 		nodes = append(nodes, n)
 		switch key := s.Target; {
 		case key == "":
-		case t.path[key]: // on the path, so being expanded: it has children
+		case t.path[key]:
 			n.Recursive = true
-		case t.expanded[key]: // marked even at the depth limit: its children are above
+		case t.expanded[key]: // even at the depth limit
 			n.Seen = true
 		case t.depth > 0 && level >= t.depth:
 		default:

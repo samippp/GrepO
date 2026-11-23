@@ -9,11 +9,8 @@ import (
 	"github.com/samippp/grepo/internal/graph"
 )
 
-// calleesIndex: main calls Store.Get, Getter.Get (implemented by *Store, by
-// Cache, and by Wrapper with a Get promoted from outside the repo), a local
-// holding Get or handle, and a func value nothing resolves; it passes handle
-// to http.HandleFunc and stores Get in a field. Get locks a mutex; handle
-// calls itself and main$1, a closure that calls Get.
+// calleesIndex: main reaches Get every way, Getter.Get has three
+// implementations (one promoted from outside), handle recurses.
 func calleesIndex() *Index {
 	const (
 		tWrapper = app + ".Wrapper"
@@ -74,7 +71,7 @@ func TestCallees(t *testing.T) {
 		"local main.go:8:2 " + idHandle + " via=",
 		"dynamic main.go:9:2  via=",
 		"direct main.go:10:2 net/http.HandleFunc via=",
-		"value main.go:10:2 " + idHandle + " via=net/http.HandleFunc", // after the call it's passed to
+		"value main.go:10:2 " + idHandle + " via=net/http.HandleFunc", // after its call
 		"value main.go:11:2 " + idGet + " via=" + tStore + ".onGet",
 		"direct main.go:30:2 " + idMain + "$1 via=",
 	}
@@ -83,8 +80,7 @@ func TestCallees(t *testing.T) {
 	}
 }
 
-// One method per implementing type, at its declaration; one promoted from
-// outside the repo is at the type it's promoted to.
+// A method per type, at its declaration; one from outside at its type.
 func TestImplementations(t *testing.T) {
 	ix := calleesIndex()
 	var got []string
@@ -104,7 +100,7 @@ func TestImplementations(t *testing.T) {
 	}
 }
 
-// renderTree renders nodes one per line, indented by level, with Seen/Recursive.
+// renderTree renders nodes a line each, indented.
 func renderTree(nodes []*Node, indent string) []string {
 	var lines []string
 	for _, n := range nodes {

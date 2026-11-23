@@ -25,8 +25,7 @@ func TestCallees(t *testing.T) {
 			at("main.go:25:2") + ": main.main$1: func() {",
 			at("main.go:32:2") + ": fmt.Println: fmt.Println(u)",
 		}, 0},
-		// Two levels: the interface call's methods at their declarations; a
-		// function expanded once; outside functions not followed.
+		// Two levels: implementations, see above, outside leaves.
 		{[]string{"--depth", "2", "main"}, []string{
 			at("main.go:16:7") + ": store.New: s := store.New()",
 			at("main.go:17:7") + ": (*store.Store).Get: u := s.Get(1)",
@@ -47,7 +46,7 @@ func TestCallees(t *testing.T) {
 			at("main.go:25:2") + ": main.main$1: func() {",
 			at("main.go:32:2") + ": fmt.Println: fmt.Println(u)",
 		}, 0},
-		// Values passed and stored, go and defer, a call through a field.
+		// Values, go and defer, a call through a field.
 		{[]string{"Runner.closures"}, []string{
 			at("store/closures.go:30:2") + ": (*store.Runner).closures$1: func() {",
 			at("store/closures.go:34:2") + ": (*store.Runner).closures$2: inc()  [through a local]",
@@ -68,7 +67,7 @@ func TestCallees(t *testing.T) {
 			at("store/closures.go:45:13") + ": (*store.Runner).closures$7: _ = Runner{Run: func() error { return nil }}  [stored in store.Runner.Run]",
 			at("store/closures.go:46:2") + ": store.Runner.OnDone: r.OnDone()  [dynamic]",
 		}, 0},
-		// A call nothing resolves, through a func value with no field.
+		// A call nothing resolves.
 		{[]string{"--depth", "0", "Runner.locals"}, []string{
 			at("store/closures.go:63:2") + ": (*store.Runner).locals$1: f()  [through a local]",
 			at("store/closures.go:63:2") + ": (*store.Runner).start: f()  [through a local]",
@@ -96,7 +95,7 @@ func TestCallees(t *testing.T) {
 	}
 }
 
-// --json nests children, and marks a site whose function was expanded above.
+// --json nests children and marks seen sites.
 func TestCalleesJSON(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := run(t, "callees", "--json", "--depth", "2", "main", fixture)
