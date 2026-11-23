@@ -42,6 +42,12 @@ function already expanded is marked [see above], and one in the path
 above [recursive]. Package-level code isn't followed. --direct applies
 at every level.
 
+--format mermaid or dot draws the tree as a graph, to paste into an
+issue or PR: a node per function, edges from caller to callee, labeled
+when not a direct call. An interface call goes to the interface
+method, with dotted edges to its implementations. Past 100 nodes, a
+note on stderr suggests a smaller --depth.
+
 The function is named as in Go, qualified as much as needed: Get,
 Store.Get, (*Store).Get, store.Store.Get, or a path suffix such as
 caddyhttp/reverseproxy.Handler.ServeHTTP. When several match, the one in
@@ -87,9 +93,14 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 
 			nodes := rg.ix.CallerTree(fn, depth, direct)
 			out := cmd.OutOrStdout()
-			if format == "json" {
+			switch format {
+			case "json":
 				err = writeJSON(out, callersJSON{Base: filepath.ToSlash(rg.base), Function: p.function(fn), Sites: p.nodesJSON(nodes)})
-			} else {
+			case "mermaid", "dot":
+				if len(nodes) > 0 {
+					err = callerDiagram(p, fn, nodes).write(out, cmd.ErrOrStderr(), format, "callers")
+				}
+			default:
 				err = printCallers(out, p, nodes, 0)
 			}
 			if err != nil {
@@ -102,7 +113,7 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 		},
 	}
 
-	formats = addFormatFlags(cmd, "text", "json")
+	formats = addFormatFlags(cmd, "text", "json", "mermaid", "dot")
 	cmd.Flags().IntVar(&depth, "depth", 1, "levels to follow; 0 for all the way")
 	cmd.Flags().BoolVar(&direct, "direct", false, "only direct calls, at every level: no calls through interfaces or func values")
 	return cmd

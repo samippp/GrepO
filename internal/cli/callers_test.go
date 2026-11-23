@@ -230,7 +230,7 @@ func TestCallersFormatErrors(t *testing.T) {
 		args []string
 		want string // in the error
 	}{
-		{[]string{"--format", "mermaid"}, "--format mermaid: callers prints text or json"},
+		{[]string{"--format", "yaml"}, "--format yaml: callers prints text, json, mermaid or dot"},
 		{[]string{"--json", "--format", "text"}, "[format json] were all set"},
 	} {
 		root := newRootCmd(&app{})

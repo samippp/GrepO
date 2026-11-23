@@ -118,6 +118,9 @@ func (ix *Index) add(f *graph.Function) {
 	}
 }
 
+// Function is the function with ID id, in the repo or called from it; nil if none.
+func (ix *Index) Function(id string) *graph.Function { return ix.funcs[id] }
+
 // IsPackage reports whether id is a repo package's path, as a Site's From is
 // for package-level code.
 func (ix *Index) IsPackage(id string) bool { return ix.repo[id] }
