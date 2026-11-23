@@ -36,7 +36,7 @@ Closures keep their IDs (`doActiveHealthCheck$1`), not their enclosing function'
 
 ## 3. Formats
 
-`--format text|json|mermaid|dot`, with `--json` short for `--format json`. Every command has `text` and `json`. Only commands whose answer is a graph have `mermaid` and `dot`: `pkg`, `callers`/`callees` with `--depth`, and `impact`. Asking another command for them exits with 2.
+`--format text|json|mermaid|dot`, with `--json` short for `--format json`. Every command has `text` and `json`. Only commands whose answer is a graph have `mermaid` and `dot`: `pkg`, `callers`/`callees` (at any depth, one level by default), and `impact`. Asking another command for them exits with 2.
 
 ## 4. Trees: `--depth`
 
@@ -145,7 +145,43 @@ store/closures.go:40:2: handle: http.HandleFunc("/a", handle)  [HTTP handler]
 
 These are for commands whose answer is a graph (section 3), to paste into an issue, PR or README.
 
-- **What's drawn:** nodes are packages or functions, labeled by short name. Edges are imports or calls, and an edge is labeled only when it isn't a direct call (`via store.Getter`).
+```
+$ grepo callees --depth 2 --format mermaid main
+flowchart LR
+  n0["main.main"]
+  n1["store.New"]
+  n2["(*store.Store).Get"]
+  n3["(*sync.Mutex).Lock"]
+  n4["(*sync.Mutex).Unlock"]
+  n5{{"(store.Getter).Get"}}
+  n6["(store.Cache).Get"]
+  n7["main.greet"]
+  n8["fmt.Println"]
+  n9["main.main$1"]
+  n0 --> n1
+  n0 --> n2
+  n2 --> n3
+  n2 --> n4
+  n0 --> n5
+  n5 -.-> n6
+  n5 -.-> n2
+  n0 -- "through a local" --> n7
+  n7 --> n8
+  n0 --> n9
+  n9 --> n7
+  n0 --> n8
+  classDef root stroke-width:3px
+  classDef outside stroke-dasharray:4 3
+  class n0 root
+  class n3,n4,n8 outside
+```
+
+- **What's drawn:** nodes are packages or functions, labeled by short name. Edges are imports or calls, and an edge is labeled only when it isn't a direct call (`through a local`, `passed to f`, `stored in X`, `dynamic`).
+- **Call trees** (`callers`, `callees`): a node per function, and an edge per caller, callee and label, pointing from caller to callee in both commands. Several call sites become one edge. A repeat or a recursive call is an edge to the node already drawn, so there's no `[see above]`.
+- **Interface calls** go to the interface method, drawn as a hexagon, with dotted edges from it to its implementations. `callers` draws the method too, from the call's callee. Collapsing it into `via I` edges from each caller to each implementation was weighed and rejected:
+  - edges grow as callers times implementations: 7,533 edges against 5,102 for `callees --depth 0 caddy.Load`;
+  - a call with no implementation in the repo (`io.Writer`), or at the depth limit, would still need the method's node.
+- **Other nodes:** the function asked about has a bold border, and functions outside the repo a dashed one. Package-level code is `store (package level)`. A call nothing resolves goes to a node named by the field or var it goes through, or to a `(func value)` node per caller.
 - **Same graph in both:** DOT has the same nodes and edges, with full IDs as node names.
 - **Size:** Mermaid renders badly past about 100 nodes. The graph is still printed whole, and a note on stderr suggests `--depth` or a narrower path.
 
@@ -167,5 +203,6 @@ One tool per command, with the command's flags as arguments. A result is the com
 
 - **Columns now:** yes, before more commands print positions (section 9, item 1).
 - **Tree lines:** position first, with the indent in the message (section 4).
+- **Interface calls in diagrams:** the interface method is a node of its own (section 7).
 - **Order:** results by position (`callers`, `callees`, `state`); ranked lists by use (`find`, `pkg` with no path), most used first. On caddy, `find Load` puts `(caddy.Context).LoadModule` (60 callers) first, where by position it would come fifth, behind a `LoadConfig` nothing calls. `| sort` gives position order back.
 - **Closures and inits:** text keeps their IDs (`replaceLocalAdminServer$1$1`, `main.init@main.go#1`), not the enclosing function with a tag. The ID can be passed back as a name, and `$1$1` shows the code runs later (a goroutine or callback), not when its parent runs. JSON adds `fromDecl` (section 6).

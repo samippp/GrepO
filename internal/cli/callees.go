@@ -44,13 +44,20 @@ declarations, as [implements I]. A function already expanded is marked
 [see above], and one calling back into the path above it [recursive].
 Functions outside the repo aren't followed.
 
+--format mermaid or dot draws the tree as a graph, to paste into an
+issue or PR: a node per function, edges from caller to callee, labeled
+when not a direct call. An interface call goes to the interface
+method, with dotted edges to its implementations. Past 100 nodes, a
+note on stderr suggests a smaller --depth.
+
 The function is named as for callers. The whole module is loaded from
 source each time, for now.
 
 Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 		Example: `  grepo callees main
   grepo callees --depth 2 '(*Server).ServeHTTP' ./modules/caddyhttp
-  grepo callees --depth 0 --direct --json caddy.Load`,
+  grepo callees --depth 0 --direct --json caddy.Load
+  grepo callees --depth 2 --format mermaid main`,
 		Args:        cobra.RangeArgs(1, 2),
 		Annotations: map[string]string{quiet: "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,9 +88,14 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 
 			nodes := rg.ix.CalleeTree(fn, depth, direct)
 			out := cmd.OutOrStdout()
-			if format == "json" {
+			switch format {
+			case "json":
 				err = writeJSON(out, calleesJSON{Base: filepath.ToSlash(rg.base), Function: p.function(fn), Callees: p.nodesJSON(nodes)})
-			} else {
+			case "mermaid", "dot":
+				if len(nodes) > 0 {
+					err = calleeDiagram(p, fn, nodes).write(out, cmd.ErrOrStderr(), format, "callees")
+				}
+			default:
 				err = printCallees(out, p, nodes, 0)
 			}
 			if err != nil {
@@ -96,7 +108,7 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 		},
 	}
 
-	formats = addFormatFlags(cmd, "text", "json")
+	formats = addFormatFlags(cmd, "text", "json", "mermaid", "dot")
 	cmd.Flags().IntVar(&depth, "depth", 1, "levels to follow; 0 for all the way")
 	cmd.Flags().BoolVar(&direct, "direct", false, "only static calls: no interface calls, locals, func values")
 	return cmd

@@ -49,6 +49,7 @@ grepo callers Store.Get                          # path:line:col: calling functi
 grepo callers --json '(*Server).Serve' ./server  # JSON; ./server's package wins a tie
 grepo callers os.Exit                            # functions outside the repo work too
 grepo callers --depth 3 Store.Get                # callers' callers, indented, 3 levels
+grepo callees --depth 2 --format mermaid main     # a diagram to paste into an issue or PR
 ```
 
 ```
@@ -78,7 +79,7 @@ Requirements:
 ## Pipeline
 
 ```
-GitHub link ──► source ──► load ──► graph ──► store ──► query ──► cli commands: path:line:col text, --json, --format mermaid|dot*
+GitHub link ──► source ──► load ──► graph ──► store ──► query ──► cli commands: path:line:col text, --json, --format mermaid|dot
  or local path                                               └──► grepo mcp*: the same queries as MCP tools, for agents
 ```
 
@@ -141,8 +142,8 @@ Milestone numbers are kept as they were, so references in issues and the docs st
   - order: `callers`, `callees`, `find`, `state`, `pkg`, `entry`, `impact`, then `grepo mcp`; each loads from source until the store keeps what they read
   - Working in code:
     - `state <type|var>`: who writes each field or var, by kind, with a role (config, live state, counter, no writes found)
-    - `callers <func>`: every site that can call it, directly, through an interface it implements or as a func value; functions outside the repo too (`os.Exit`); `--depth n` for a tree of callers' callers ✅
-    - `callees <func>`: every call and func value in it, `--depth n` for a tree expanding interface calls into their implementations ✅
+    - `callers <func>`: every site that can call it, directly, through an interface it implements or as a func value; functions outside the repo too (`os.Exit`); `--depth n` for a tree of callers' callers, `--format mermaid|dot` to draw it ✅
+    - `callees <func>`: every call and func value in it, `--depth n` for a tree expanding interface calls into their implementations, `--format mermaid|dot` to draw it ✅
     - `impact <symbol>`: everything that reaches it through calls and writes, rolled up by package
   - Finding your way:
     - `pkg [path]`: imports and imported-by, exported API ranked by callers, owned state and its writers, outside calls; with no path, the repo's packages ranked by how central they are

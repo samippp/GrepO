@@ -47,7 +47,9 @@ func (f *formatFlag) get(cmd *cobra.Command) (string, error) {
 		return "json", nil
 	}
 	if !slices.Contains(f.offered, f.format) {
-		return "", fmt.Errorf("--format %s: %s prints %s", f.format, cmd.Name(), strings.Join(f.offered, " or "))
+		n := len(f.offered)
+		list := strings.Join(f.offered[:n-1], ", ") + " or " + f.offered[n-1]
+		return "", fmt.Errorf("--format %s: %s prints %s", f.format, cmd.Name(), list)
 	}
 	return f.format, nil
 }
