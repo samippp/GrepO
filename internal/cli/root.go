@@ -3,6 +3,7 @@
 // graph, query) and print results. Each has its own file:
 //   - analyze: the package and call graphs as JSON.
 //   - callers: every site that can call a function, grep-style.
+//   - callees: what a function reaches, as a tree with --depth.
 //   - vta-diff (hidden): compare the call graph with x/tools' VTA.
 //
 // module.go loads the module every command is about; query commands share
@@ -59,6 +60,7 @@ func newRootCmd(a *app) *cobra.Command {
 
 	root.AddCommand(newAnalyzeCmd(a))
 	root.AddCommand(newCallersCmd(a))
+	root.AddCommand(newCalleesCmd(a))
 	root.AddCommand(newVTADiffCmd(a))
 	return root
 }

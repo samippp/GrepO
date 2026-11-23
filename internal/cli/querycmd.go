@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -143,4 +144,88 @@ func (p *printer) ambiguous(w io.Writer, err *query.AmbiguousError) error {
 		}
 	}
 	return reportedError{err}
+}
+
+// valueTag is "passed to f" or "stored in field".
+func (p *printer) valueTag(s query.Site) string {
+	switch {
+	case s.Access != nil:
+		return "stored in " + p.rg.ix.Short(s.Via)
+	case s.Via == "":
+		return "passed to a func value"
+	default:
+		return "passed to " + p.rg.ix.Short(s.Via)
+	}
+}
+
+// function is fn for --json, its position as printed.
+func (p *printer) function(fn *graph.Function) graph.Function {
+	out := *fn
+	if fn.Pos != "" { // "" outside the repo
+		out.Pos = p.path(fn.Pos)
+	}
+	return out
+}
+
+// siteJSON is a site in every command's --json: full IDs, printed positions.
+type siteJSON struct {
+	Kind query.Kind `json:"kind"`
+	Pos  string     `json:"pos"`  // path:line:col, relative to base
+	From string     `json:"from"` // the function the site is in, or its package
+	// FromDecl: Index.Decl(From), for closures.
+	FromDecl string `json:"fromDecl,omitempty"`
+	// Via: the interface, or the function or field a value goes to.
+	Via    string `json:"via,omitempty"`
+	Target string `json:"target,omitempty"` // callees: the function reached
+	Line   string `json:"line,omitempty"`
+
+	// The call at the site, if any.
+	Callee   string         `json:"callee,omitempty"`
+	CallKind graph.CallKind `json:"callKind,omitempty"`
+	Args     []graph.Arg    `json:"args,omitempty"`
+	Through  string         `json:"through,omitempty"`
+	Stmt     string         `json:"stmt,omitempty"`
+	Funcs    []string       `json:"funcs,omitempty"` // a local's functions
+
+	Access graph.AccessKind `json:"access,omitempty"` // a value stored
+
+	// Trees (--depth).
+	Children  []siteJSON `json:"children,omitempty"`
+	Seen      bool       `json:"seen,omitempty"`
+	Recursive bool       `json:"recursive,omitempty"`
+}
+
+func (p *printer) siteJSON(s query.Site) siteJSON {
+	js := siteJSON{Kind: s.Kind, Pos: p.path(s.Pos), From: s.From, FromDecl: p.rg.ix.Decl(s.From), Via: s.Via, Target: s.Target}
+	if s.Kind != query.Implementation { // a declaration
+		js.Line = p.line(s.Pos)
+	}
+	if c := s.Call; c != nil {
+		js.Callee, js.CallKind, js.Args, js.Through, js.Stmt, js.Funcs = c.Callee, c.CallKind, c.Args, c.Through, c.Stmt, c.Funcs
+	}
+	if s.Access != nil {
+		js.Access = s.Access.Kind
+	}
+	return js
+}
+
+// nodesJSON is a tree for --json.
+func (p *printer) nodesJSON(nodes []*query.Node) []siteJSON {
+	out := []siteJSON{}
+	for _, n := range nodes {
+		js := p.siteJSON(n.Site)
+		js.Seen, js.Recursive = n.Seen, n.Recursive
+		if len(n.Children) > 0 {
+			js.Children = p.nodesJSON(n.Children)
+		}
+		out = append(out, js)
+	}
+	return out
+}
+
+// writeJSON writes v indented.
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }

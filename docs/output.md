@@ -26,9 +26,9 @@ path:line:col: name: source line  [how]
 | Part | What it is |
 |---|---|
 | `path:line:col` | the result's position; `col` is the 1-based byte column, as `go/token`, gopls and vim count it |
-| `name` | what's at the position: for a site, the function it's in (`main.main`, `main.main$1` for a closure); for a declaration, what's declared |
+| `name` | what's at the position: for a `callers` site, the function it's in (`main.main`, `main.main$1` for a closure); for a `callees` site, the function it reaches (`(func value)` when nothing names it); for a declaration, what's declared |
 | `source line` | the trimmed line at the position, read when printed; left out when the file can't be read |
-| `[how]` | how the result relates to what was asked, if not plainly; one tag, at most a few words |
+| `[how]` | how the result relates to what was asked, if not plainly; one tag, at most a few words, its parts joined by commas (`[implements store.Getter, see above]`) |
 
 A call site's position is the start of its call expression, and a declaration's is its name. This is the same rule the graph uses, so text, JSON and the graph agree.
 
@@ -48,22 +48,27 @@ main.go:16:7: store.New: s := store.New()
 main.go:17:7: (*store.Store).Get: u := s.Get(1)
 store/store.go:24:2:   (*sync.Mutex).Lock: s.mu.Lock()
 store/store.go:25:8:   (*sync.Mutex).Unlock: defer s.mu.Unlock()  [defer]
-main.go:20:2: store.Getter.Get: g.Get(2)  [interface]
-store/store.go:23:17:   (*store.Store).Get  [implements store.Getter]  [see above]
+main.go:20:2: (store.Getter).Get: g.Get(2)  [interface]
+store/cache.go:9:16:   (store.Cache).Get  [implements store.Getter]
+store/store.go:23:17:   (*store.Store).Get  [implements store.Getter, see above]
 main.go:23:2: main.greet: f(u.Name)  [through a local]
-...
+main.go:36:2:   fmt.Println: fmt.Println("hello", name)
+main.go:25:2: main.main$1: func() {
+main.go:26:3:   main.greet: greet("closure")  [see above]
+main.go:32:2: fmt.Println: fmt.Println(u)
 ```
 
 - **Interface calls** get their implementations as children. Each is located at its declaration and tagged `[implements I]`, and each expands in turn.
-- **Repeats:** a function already expanded is printed again with `[see above]`, and isn't expanded twice. A call back into the path above is `[recursive]`.
+- **Repeats:** a function already expanded is printed again with `[see above]`, and isn't expanded twice, so `--depth 0` stays bounded (7,435 lines for `callees --depth 0 caddy.Load`). A site at the depth limit is marked too. A call back into the path above is `[recursive]`.
 - **Leaves:** functions outside the repo aren't expanded, and calls to them show as leaves.
 - **`--direct`** drops the interface, local and value edges at every level.
+
 
 A drawn tree (`├─`) was considered and rejected: it breaks rule 1, and quickfix can't read it.
 
 ## 5. Per command
 
-Only `callers` exists. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
+`callers` and `callees` exist. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
 
 **`callers <func>`**: as now, plus columns.
 ```
@@ -71,7 +76,7 @@ main.go:17:7: main.main: u := s.Get(1)
 main.go:20:2: main.main: g.Get(2)  [via store.Getter]
 ```
 
-**`callees <func>`**: the calls a function makes, by position, one line per call site. Within a site, a dynamic call with several candidates (`Funcs`) gives a line per candidate, tagged `[through a local]`. A call nothing resolves is tagged `[dynamic]`.
+**`callees <func>`**: every site in a function that reaches another, by position: its calls, and the functions it passes or stores as values (`[passed to f]`, `[stored in field]`), as `callers` lists those the other way. An interface call is tagged `[interface]`. A call through a local gives a line per function assigned to it, tagged `[through a local]`. A call nothing resolves is `[dynamic]`, named by the field or var it goes through, or `(func value)`. `go` and `defer` join the tag (`[go]`, `[defer]`). `--depth` makes it a tree (section 4).
 
 **`find <word>`** *sketch*: declarations matching a word, ranked by how much they're used, most first.
 ```
@@ -147,7 +152,7 @@ One tool per command, with the command's flags as arguments. A result is the com
    - Cost: about 390 position literals in tests change, most through helpers like `pat("35")`.
 2. **`--format`** (done), shared by the query commands (`addFormatFlags`), with `--json` kept as its alias.
 3. **`base`** (done) in `callers --json`, with `fromDecl` on closure sites (`Index.Decl`).
-4. **The tree printer**, written with `callees` and then given to `callers` for `--depth`.
+4. **The tree printer** (done with `callees`: `query.CalleeTree`, its builder generic), then given to `callers` for `--depth`.
 
 ## 10. Decisions
 

@@ -4,7 +4,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -124,12 +123,8 @@ func printCallers(w io.Writer, p *printer, sites []query.Site) error {
 			text += "  [via " + ix.Short(s.Via) + "]"
 		case s.Kind == query.Local:
 			text += "  [through a local]"
-		case s.Kind == query.Value && s.Access != nil:
-			text += "  [stored in " + ix.Short(s.Via) + "]"
-		case s.Kind == query.Value && s.Via == "":
-			text += "  [passed to a func value]"
 		case s.Kind == query.Value:
-			text += "  [passed to " + ix.Short(s.Via) + "]"
+			text += "  [" + p.valueTag(s) + "]"
 		}
 		if _, err := fmt.Fprintln(w, text); err != nil {
 			return err
@@ -145,43 +140,10 @@ type callersJSON struct {
 	Sites    []siteJSON     `json:"sites"`
 }
 
-type siteJSON struct {
-	Kind query.Kind `json:"kind"` // direct, interface, local or value
-	Pos  string     `json:"pos"`  // path:line:col, relative to the current directory
-	From string     `json:"from"` // the function the site is in, or the package for package-level code
-	// FromDecl is the declaration a closure From is written in: a declared
-	// function, or the package var it initializes.
-	FromDecl string `json:"fromDecl,omitempty"`
-	Via      string `json:"via,omitempty"`  // interface: its ID; value: the function it's passed to, or the field or var it's stored in
-	Line     string `json:"line,omitempty"` // the source line, trimmed
-
-	// The call at the site, if any.
-	Callee   string         `json:"callee,omitempty"`
-	CallKind graph.CallKind `json:"callKind,omitempty"`
-	Args     []graph.Arg    `json:"args,omitempty"`
-	Through  string         `json:"through,omitempty"`
-	Stmt     string         `json:"stmt,omitempty"`
-	Funcs    []string       `json:"funcs,omitempty"` // local: every function assigned to the local called
-
-	Access graph.AccessKind `json:"access,omitempty"` // a value stored: assign or construct
-}
-
 func printCallersJSON(w io.Writer, p *printer, fn *graph.Function, sites []query.Site) error {
-	out := callersJSON{Base: filepath.ToSlash(p.rg.base), Function: *fn, Sites: []siteJSON{}}
-	if fn.Pos != "" { // "" outside the repo
-		out.Function.Pos = p.path(fn.Pos)
-	}
+	out := callersJSON{Base: filepath.ToSlash(p.rg.base), Function: p.function(fn), Sites: []siteJSON{}}
 	for _, s := range sites {
-		js := siteJSON{Kind: s.Kind, Pos: p.path(s.Pos), From: s.From, FromDecl: p.rg.ix.Decl(s.From), Via: s.Via, Line: p.line(s.Pos)}
-		if c := s.Call; c != nil {
-			js.Callee, js.CallKind, js.Args, js.Through, js.Stmt, js.Funcs = c.Callee, c.CallKind, c.Args, c.Through, c.Stmt, c.Funcs
-		}
-		if s.Access != nil {
-			js.Access = s.Access.Kind
-		}
-		out.Sites = append(out.Sites, js)
+		out.Sites = append(out.Sites, p.siteJSON(s))
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	return writeJSON(w, out)
 }

@@ -18,10 +18,11 @@ One command, one question, answered from the terminal:
 - Graphs can also come out as Mermaid, which GitHub renders in issues, PRs and READMEs, or as DOT.
 - Later runs reuse what an earlier run built, so repeat questions on a large repo don't start over.
 
-Commands (`callers` works now; the rest are planned, M3):
+Commands (`callers` and `callees` work now; the rest are planned, M3):
 
 ```sh
 grepo callers Store.Get        # who calls it, interface calls included
+grepo callees --depth 2 main   # what it calls, as a tree through interfaces
 grepo state Store.users        # who writes it, and how
 grepo impact Store.users       # everything that reaches it, by package
 grepo entry                    # where requests and commands start
@@ -140,7 +141,7 @@ Milestone numbers are kept as they were, so references in issues and the docs st
   - Working in code:
     - `state <type|var>`: who writes each field or var, by kind, with a role (config, live state, counter, no writes found)
     - `callers <func>`: every site that can call it, directly, through an interface it implements or as a func value; functions outside the repo too (`os.Exit`) ✅
-    - `callees <func>`, and call trees for both, expanding interface calls into their implementations
+    - `callees <func>`: every call and func value in it, `--depth n` for a tree expanding interface calls into their implementations ✅; `callers --depth` next
     - `impact <symbol>`: everything that reaches it through calls and writes, rolled up by package
   - Finding your way:
     - `pkg [path]`: imports and imported-by, exported API ranked by callers, owned state and its writers, outside calls; with no path, the repo's packages ranked by how central they are
