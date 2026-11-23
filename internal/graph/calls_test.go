@@ -133,6 +133,11 @@ func TestCallGraphCalls(t *testing.T) {
 		// Package level: the package calls the blank var's closure; nested's closure calls its own.
 		{Caller: storePkg, Callee: storePkg + "._$1", Pos: cat("51:9"), CallKind: StaticCall},
 		{Caller: storePkg + ".nested$1", Callee: storePkg + ".nested$1$1", Pos: cat("54:2"), CallKind: StaticCall},
+		// For callers --depth: walk recurses and reaches leaf twice.
+		{Caller: storePkg + ".walk", Callee: storePkg + ".walk", Pos: "store/tree.go:6:3", CallKind: StaticCall, Args: []Arg{{Expr: "n - 1", Type: "int"}}},
+		{Caller: storePkg + ".walk", Callee: storePkg + ".visit", Pos: "store/tree.go:8:2", CallKind: StaticCall},
+		{Caller: storePkg + ".walk", Callee: storePkg + ".leaf", Pos: "store/tree.go:9:2", CallKind: StaticCall},
+		{Caller: storePkg + ".visit", Callee: storePkg + ".leaf", Pos: "store/tree.go:12:16", CallKind: StaticCall},
 	}
 
 	checkExact(t, "call", g.Calls, want, formatCall)

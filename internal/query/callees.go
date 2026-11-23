@@ -105,6 +105,7 @@ func (ix *Index) CalleeTree(fn *graph.Function, depth int, direct bool) []*Node 
 	}
 	t := &tree{
 		depth:    depth,
+		key:      func(s Site) string { return s.Target },
 		path:     map[string]bool{fn.ID: true},
 		expanded: map[string]bool{},
 		children: func(s Site) []Site {
@@ -120,9 +121,34 @@ func (ix *Index) CalleeTree(fn *graph.Function, depth int, direct bool) []*Node 
 	return t.nodes(callees(fn.ID), 1)
 }
 
-// tree builds Nodes depth-first, expanding each Target once.
+// CallerTree is the sites that can reach fn, depth levels down (0: all): a
+// site's children are its From's callers. direct keeps direct calls.
+func (ix *Index) CallerTree(fn *graph.Function, depth int, direct bool) []*Node {
+	callers := func(id string) []Site {
+		f := ix.funcs[id]
+		if f == nil { // package-level code
+			return nil
+		}
+		sites := ix.Callers(f)
+		if direct {
+			sites = slices.DeleteFunc(sites, func(s Site) bool { return s.Kind != Direct })
+		}
+		return sites
+	}
+	t := &tree{
+		depth:    depth,
+		key:      func(s Site) string { return s.From },
+		children: func(s Site) []Site { return callers(s.From) },
+		path:     map[string]bool{fn.ID: true},
+		expanded: map[string]bool{},
+	}
+	return t.nodes(callers(fn.ID), 1)
+}
+
+// tree builds Nodes depth-first, expanding each site's key once.
 type tree struct {
 	depth    int
+	key      func(Site) string // the function a site's children belong to
 	children func(Site) []Site
 	path     map[string]bool // being expanded
 	expanded map[string]bool
@@ -133,7 +159,7 @@ func (t *tree) nodes(sites []Site, level int) []*Node {
 	for _, s := range sites {
 		n := &Node{Site: s}
 		nodes = append(nodes, n)
-		switch key := s.Target; {
+		switch key := t.key(s); {
 		case key == "":
 		case t.path[key]:
 			n.Recursive = true

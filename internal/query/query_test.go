@@ -81,6 +81,10 @@ func testIndex() *Index {
 			{Caller: idHandle, Callee: "(net/http.Header).Get", Pos: "main.go:70:2", CallKind: graph.StaticCall},
 			{Caller: idHandle, Callee: "(*gopkg.in/yaml.v3.Node).Decode", Pos: "main.go:71:2", CallKind: graph.StaticCall},
 			{Caller: idHandle, Callee: "github.com/dustin/go-humanize.Bytes", Pos: "main.go:72:2", CallKind: graph.StaticCall},
+			// handle twice in one call: one site each.
+			{Caller: idMain, Callee: store + ".Load", Pos: "main.go:80:2", CallKind: graph.StaticCall,
+				Args: []graph.Arg{{Expr: "handle", Func: idHandle}, {Expr: "handle", Func: idHandle}}},
+			{Caller: idMain, Callee: "", Pos: "main.go:81:2", CallKind: graph.DynamicCall, Funcs: []string{idHandle, idHandle}},
 		},
 		Accesses: []graph.Access{
 			{Accessor: idMain, Target: tStore + ".onGet", Pos: "main.go:50:2", Kind: graph.AssignAccess, Func: idGet},
@@ -180,7 +184,9 @@ func TestCallers(t *testing.T) {
 		// Passed to a function as a value.
 		{idHandle, []string{
 			"local main.go:45:2 " + idMain + " via=", // one of the local's functions
+			"local main.go:81:2 " + idMain + " via=",
 			"value main.go:40:2 " + idMain + " via=net/http.HandleFunc",
+			"value main.go:80:2 " + idMain + " via=" + store + ".Load",
 		}},
 		// An interface method: calls through it are direct; no implementations to follow.
 		{idIGet, []string{"direct main.go:20:2 " + idMain + " via="}},

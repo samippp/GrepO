@@ -62,6 +62,15 @@ main.go:32:2: fmt.Println: fmt.Println(u)
 - **Repeats:** a function already expanded is printed again with `[see above]`, and isn't expanded twice, so `--depth 0` stays bounded (7,435 lines for `callees --depth 0 caddy.Load`). A site at the depth limit is marked too. A call back into the path above is `[recursive]`.
 - **Leaves:** functions outside the repo aren't expanded, and calls to them show as leaves.
 - **`--direct`** drops the interface, local and value edges at every level.
+- **`callers`** expands a site's calling function: its children are the sites that can call that function. Package-level code is a leaf. A self-call is `[recursive]` at one level too, as in `callees`.
+
+```
+$ grepo callers --depth 0 leaf
+store/tree.go:9:2: store.walk: leaf()
+store/tree.go:6:3:   store.walk: walk(n - 1)  [recursive]
+store/tree.go:12:16: store.visit: func visit() { leaf() }
+store/tree.go:8:2:   store.walk: visit()  [see above]
+```
 
 
 A drawn tree (`├─`) was considered and rejected: it breaks rule 1, and quickfix can't read it.
@@ -70,7 +79,7 @@ A drawn tree (`├─`) was considered and rejected: it breaks rule 1, and quick
 
 `callers` and `callees` exist. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
 
-**`callers <func>`**: as now, plus columns.
+**`callers <func>`**: as now, plus columns. `--depth` makes it a tree (section 4).
 ```
 main.go:17:7: main.main: u := s.Get(1)
 main.go:20:2: main.main: g.Get(2)  [via store.Getter]
@@ -152,7 +161,7 @@ One tool per command, with the command's flags as arguments. A result is the com
    - Cost: about 390 position literals in tests change, most through helpers like `pat("35")`.
 2. **`--format`** (done), shared by the query commands (`addFormatFlags`), with `--json` kept as its alias.
 3. **`base`** (done) in `callers --json`, with `fromDecl` on closure sites (`Index.Decl`).
-4. **The tree printer** (done with `callees`: `query.CalleeTree`, its builder generic), then given to `callers` for `--depth`.
+4. **The tree printer** (done): `query.CalleeTree` and `query.CallerTree` share one builder, keyed by a site's `Target` and `From`.
 
 ## 10. Decisions
 

@@ -73,6 +73,36 @@ func TestCallers(t *testing.T) {
 		{[]string{"main.main"}, nil, 1},
 		// Not found: an error.
 		{[]string{"Nope"}, nil, 2},
+		// Trees: a caller's callers indented, repeats and recursion marked
+		// (at one level too), package level a leaf.
+		{[]string{"walk"}, []string{at("store/tree.go:6:3") + ": store.walk: walk(n - 1)  [recursive]"}, 0},
+		{[]string{"--depth", "0", "leaf"}, []string{
+			at("store/tree.go:9:2") + ": store.walk: leaf()",
+			at("store/tree.go:6:3") + ":   store.walk: walk(n - 1)  [recursive]",
+			at("store/tree.go:12:16") + ": store.visit: func visit() { leaf() }",
+			at("store/tree.go:8:2") + ":   store.walk: visit()  [see above]",
+		}, 0},
+		{[]string{"--depth", "0", "fmt.Println"}, []string{
+			at("main.go:32:2") + ": main.main: fmt.Println(u)",
+			at("main.go:36:2") + `: main.greet: fmt.Println("hello", name)`,
+			at("main.go:26:3") + `:   main.main$1: greet("closure")`,
+			at("main.go:25:2") + ":     main.main: func() {",
+			at("main.go:64:15") + `:   main.init@main.go#1: func init() { greet("init 1") }`,
+			at("main.go:66:15") + `:   main.init@main.go#2: func init() { greet("init 2") }`,
+			at("main.go:23:2") + ":   main.main: f(u.Name)  [through a local]",
+		}, 0},
+		{[]string{"--depth", "2", "--direct", "fmt.Println"}, []string{
+			at("main.go:32:2") + ": main.main: fmt.Println(u)",
+			at("main.go:36:2") + `: main.greet: fmt.Println("hello", name)`,
+			at("main.go:26:3") + `:   main.main$1: greet("closure")`,
+			at("main.go:64:15") + `:   main.init@main.go#1: func init() { greet("init 1") }`,
+			at("main.go:66:15") + `:   main.init@main.go#2: func init() { greet("init 2") }`,
+		}, 0},
+		{[]string{"--depth", "0", "example.com/simple/store.nested$1$1"}, []string{
+			at("store/closures.go:54:2") + ": store.nested$1: func() {}()",
+			at("store/closures.go:53:5") + ":   store (package level): var nested = func() {  [stored in store.nested]",
+		}, 0},
+		{[]string{"--depth", "-1", "leaf"}, nil, 2},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			t.Parallel() // each run loads the fixture on its own
@@ -138,6 +168,26 @@ func TestCallersJSON(t *testing.T) {
 	if iface.Kind != "interface" || iface.Via != "example.com/simple/store.Getter" ||
 		iface.Callee != "(example.com/simple/store.Getter).Get" || iface.CallKind != "interface" {
 		t.Errorf("interface site = %+v", iface)
+	}
+}
+
+// --depth nests children in --json and marks repeats.
+func TestCallersJSONTree(t *testing.T) {
+	t.Parallel()
+	stdout, stderr, code := run(t, "callers", "--json", "--depth", "0", "leaf", fixture)
+	var out callersJSON
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil || code != 0 {
+		t.Fatalf("callers --json --depth 0 leaf: exit %d, %v\nstderr: %s", code, err, stderr)
+	}
+	const walk, visit = "example.com/simple/store.walk", "example.com/simple/store.visit"
+	if len(out.Sites) != 2 || out.Sites[0].From != walk || out.Sites[1].From != visit {
+		t.Fatalf("sites = %+v, want walk's then visit's", out.Sites)
+	}
+	if k := out.Sites[0].Children; len(k) != 1 || k[0].From != walk || !k[0].Recursive || k[0].Children != nil {
+		t.Errorf("walk's children = %+v, want walk, recursive", k)
+	}
+	if k := out.Sites[1].Children; len(k) != 1 || k[0].From != walk || !k[0].Seen || k[0].Recursive {
+		t.Errorf("visit's children = %+v, want walk, seen", k)
 	}
 }
 

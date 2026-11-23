@@ -14,7 +14,6 @@ import (
 
 // Index is a repo's graph, indexed for queries.
 type Index struct {
-	g        *graph.CallGraph
 	module   string
 	names    map[string]string                 // package path → name: repo packages and dependencies
 	repo     map[string]bool                   // repo package paths
@@ -24,7 +23,10 @@ type Index struct {
 	methods  map[method]string                 // method IDs, interface methods included
 	byCallee map[string][]*graph.FunctionCall  // calls with a known callee
 	byCaller map[string][]*graph.FunctionCall  // calls, by caller
+	byLocal  map[string][]*graph.FunctionCall  // calls through a local, by each function assigned to it
+	byArg    map[string][]*graph.FunctionCall  // calls passing a function, by the function
 	stores   map[string][]*graph.Access        // accesses storing a function, by accessor
+	byStored map[string][]*graph.Access        // accesses storing a function, by the function
 	types    map[string]*graph.Type            // repo types, by ID
 	impls    map[string][]graph.Implementation // by concrete type ID
 	ifaces   map[string][]graph.Implementation // by interface ID
@@ -36,7 +38,6 @@ type method struct{ owner, name string }
 // New indexes a repo's graph.
 func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 	ix := &Index{
-		g:        cg,
 		module:   pg.Module,
 		names:    map[string]string{},
 		repo:     map[string]bool{},
@@ -46,7 +47,10 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		methods:  map[method]string{},
 		byCallee: map[string][]*graph.FunctionCall{},
 		byCaller: map[string][]*graph.FunctionCall{},
+		byLocal:  map[string][]*graph.FunctionCall{},
+		byArg:    map[string][]*graph.FunctionCall{},
 		stores:   map[string][]*graph.Access{},
+		byStored: map[string][]*graph.Access{},
 		types:    map[string]*graph.Type{},
 		impls:    map[string][]graph.Implementation{},
 		ifaces:   map[string][]graph.Implementation{},
@@ -77,10 +81,21 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 			ix.byCallee[c.Callee] = append(ix.byCallee[c.Callee], c)
 		}
 		ix.byCaller[c.Caller] = append(ix.byCaller[c.Caller], c)
+		for j, f := range c.Funcs {
+			if !slices.Contains(c.Funcs[:j], f) {
+				ix.byLocal[f] = append(ix.byLocal[f], c)
+			}
+		}
+		for j, a := range c.Args {
+			if a.Func != "" && !slices.ContainsFunc(c.Args[:j], func(b graph.Arg) bool { return b.Func == a.Func }) {
+				ix.byArg[a.Func] = append(ix.byArg[a.Func], c)
+			}
+		}
 	}
 	for i := range cg.Accesses {
 		if a := &cg.Accesses[i]; a.Func != "" {
 			ix.stores[a.Accessor] = append(ix.stores[a.Accessor], a)
+			ix.byStored[a.Func] = append(ix.byStored[a.Func], a)
 		}
 	}
 	for i := range cg.Types {
@@ -293,23 +308,14 @@ func (ix *Index) Callers(fn *graph.Function) []Site {
 			}
 		}
 	}
-	// Calls through locals and uses as a value: only this query needs them,
-	// so they're scanned for rather than indexed.
-	for i := range ix.g.Calls {
-		if c := &ix.g.Calls[i]; slices.Contains(c.Funcs, fn.ID) {
-			sites = append(sites, Site{Kind: Local, Pos: c.Pos, From: c.Caller, Call: c})
-		}
+	for _, c := range ix.byLocal[fn.ID] {
+		sites = append(sites, Site{Kind: Local, Pos: c.Pos, From: c.Caller, Call: c})
 	}
-	for i := range ix.g.Calls {
-		c := &ix.g.Calls[i]
-		if slices.ContainsFunc(c.Args, func(a graph.Arg) bool { return a.Func == fn.ID }) {
-			sites = append(sites, Site{Kind: Value, Pos: c.Pos, From: c.Caller, Via: c.Callee, Call: c})
-		}
+	for _, c := range ix.byArg[fn.ID] {
+		sites = append(sites, Site{Kind: Value, Pos: c.Pos, From: c.Caller, Via: c.Callee, Call: c})
 	}
-	for i := range ix.g.Accesses {
-		if a := &ix.g.Accesses[i]; a.Func == fn.ID {
-			sites = append(sites, Site{Kind: Value, Pos: a.Pos, From: a.Accessor, Via: a.Target, Access: a})
-		}
+	for _, a := range ix.byStored[fn.ID] {
+		sites = append(sites, Site{Kind: Value, Pos: a.Pos, From: a.Accessor, Via: a.Target, Access: a})
 	}
 	slices.SortStableFunc(sites, func(a, b Site) int {
 		return cmp.Or(cmp.Compare(kindOrder[a.Kind], kindOrder[b.Kind]), comparePos(a.Pos, b.Pos), cmp.Compare(a.From, b.From))

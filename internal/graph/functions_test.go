@@ -173,6 +173,10 @@ func TestCallGraphFunctions(t *testing.T) {
 		{ID: storePkg + ".flush", Name: "flush", Package: storePkg, Params: ps("w", "io.Writer"), Pos: "store/outside.go:12:6"},
 		{ID: "(" + tFailure + ").Error", Name: "Error", Package: storePkg, Receiver: recv("", tFailure),
 			Results: ps("", "string"), Exported: true, Pos: "store/outside.go:17:16", Owner: tFailure},
+		// For callers --depth (store/tree.go).
+		{ID: storePkg + ".walk", Name: "walk", Package: storePkg, Params: ps("n", "int"), Pos: "store/tree.go:4:6"},
+		{ID: storePkg + ".visit", Name: "visit", Package: storePkg, Pos: "store/tree.go:12:6"},
+		{ID: storePkg + ".leaf", Name: "leaf", Package: storePkg, Pos: "store/tree.go:14:6"},
 	}
 
 	// Closures have their own test.
