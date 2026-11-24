@@ -6,10 +6,12 @@ package graph
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 )
 
-// walk records the calls, accesses and local types under n, a statement or
-// declaration in id's body (or a package-level value, with the package as id).
+// walk records the calls, accesses, type refs and local types under n, a
+// statement or declaration in id's body (or a package-level value, with the
+// package as id).
 func (b *callGraphBuilder) walk(id string, n ast.Node) {
 	switch n := n.(type) {
 	case nil:
@@ -23,7 +25,7 @@ func (b *callGraphBuilder) walk(id string, n ast.Node) {
 			case *ast.TypeSpec:
 				b.assignLocalTypeID(id, spec)
 				b.handleTypeSpec(spec)
-				b.expr(id, spec.Type) // consts in it: type T [Max]byte
+				b.typeSpec(id, spec)
 			case *ast.ValueSpec:
 				b.expr(id, spec.Type)
 				for i, value := range spec.Values {
@@ -81,7 +83,7 @@ func (b *callGraphBuilder) expr(id string, e ast.Expr) {
 	}
 	switch e := e.(type) {
 	case *ast.Ident:
-		b.addValueRead(id, b.pkg.TypesInfo.Uses[e], e.Pos())
+		b.name(id, b.pkg.TypesInfo.Uses[e], e.Pos())
 		return
 	case *ast.SelectorExpr:
 		b.addSelector(id, e)
@@ -130,6 +132,24 @@ func (b *callGraphBuilder) expr(id string, e ast.Expr) {
 		return
 	}
 	b.children(id, e) // binary, index, slice, star, paren, type assertion, …
+}
+
+// name records what a name in an expression is: a value read, or a type ref.
+func (b *callGraphBuilder) name(id string, obj types.Object, pos token.Pos) {
+	if tn, ok := obj.(*types.TypeName); ok {
+		b.addTypeRef(id, tn, pos)
+		return
+	}
+	b.addValueRead(id, obj, pos)
+}
+
+// typeSpec walks a type declaration's type params and type, for the consts
+// and types they name: type T[P ~[Max]byte] struct{ next *T[P] }.
+func (b *callGraphBuilder) typeSpec(id string, spec *ast.TypeSpec) {
+	if spec.TypeParams != nil { // a nil *FieldList as ast.Node isn't == nil
+		b.walk(id, spec.TypeParams)
+	}
+	b.expr(id, spec.Type)
 }
 
 // children walks n's direct children.

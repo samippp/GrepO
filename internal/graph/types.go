@@ -1,10 +1,12 @@
-// Types: the Type nodes. Implementations are matched from their summaries (implementations.go).
+// Types: the Type nodes and the refs to them. Implementations are matched
+// from their summaries (implementations.go).
 
 package graph
 
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 )
 
@@ -73,6 +75,19 @@ func (b *callGraphBuilder) structFields(ownerID string, st *types.Struct) []Fiel
 		})
 	}
 	return fields
+}
+
+// addTypeRef records that referrer names tn, unless it's built in (string,
+// error, any) or a type param.
+func (b *callGraphBuilder) addTypeRef(referrer string, tn *types.TypeName, pos token.Pos) {
+	if tn.Pkg() == nil {
+		return
+	}
+	if _, ok := tn.Type().(*types.TypeParam); ok {
+		return
+	}
+	b.uses(tn.Pkg())
+	b.typeRefs = append(b.typeRefs, TypeRef{Referrer: referrer, Type: b.ids.typeID(tn), Pos: b.pos(pos)})
 }
 
 // isGeneric reports whether tn has type parameters, like List[T].

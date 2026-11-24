@@ -166,7 +166,7 @@ func TestCallGraphFunctions(t *testing.T) {
 		{ID: "(" + tWriter + ").Write", Name: "Write", Package: storePkg, Params: ps("p", "[]uint8"), Exported: true, Pos: iat("43:24"), Owner: tWriter},
 		{ID: "(" + tRawWriter + ").Write", Name: "Write", Package: storePkg, Receiver: recv("", tRawWriter), Params: ps("p", "[]byte"),
 			Exported: true, Pos: iat("47:18"), Owner: tRawWriter},
-		{ID: storePkg + ".tagLimit", Name: "tagLimit", Package: storePkg, Results: ps("", "int"), Pos: "store/consts.go:6:6"},
+		{ID: storePkg + ".tagLimit", Name: "tagLimit", Package: storePkg, Results: ps("", "int"), Pos: "store/consts.go:10:6"},
 		// An io.Writer, and a call through io.Writer (store/outside.go).
 		{ID: "(*" + tBufWriter + ").Write", Name: "Write", Package: storePkg, Receiver: recv("", "*"+tBufWriter),
 			Params: ps("p", "[]byte"), Results: ps("", "int", "", "error"), Exported: true, Pos: "store/outside.go:10:19", Owner: tBufWriter},
@@ -177,6 +177,14 @@ func TestCallGraphFunctions(t *testing.T) {
 		{ID: storePkg + ".walk", Name: "walk", Package: storePkg, Params: ps("n", "int"), Pos: "store/tree.go:4:6"},
 		{ID: storePkg + ".visit", Name: "visit", Package: storePkg, Pos: "store/tree.go:12:6"},
 		{ID: storePkg + ".leaf", Name: "leaf", Package: storePkg, Pos: "store/tree.go:14:6"},
+		// For type refs (store/typerefs.go).
+		{ID: "(" + storePkg + ".Namer).Name", Name: "Name", Package: storePkg, Params: ps("r", storePkg+".Ref"),
+			Results: ps("", storePkg+".RefAlias"), Exported: true, Pos: "store/typerefs.go:27:2", Owner: storePkg + ".Namer"},
+		{ID: "(*" + storePkg + ".Ref).refMethod", Name: "refMethod", Package: storePkg, Receiver: recv("r", "*"+storePkg+".Ref"),
+			Pos: "store/typerefs.go:32:15", Owner: storePkg + ".Ref"},
+		{ID: storePkg + ".refsIn", Name: "refsIn", Package: storePkg, Params: ps("x", "any", "h", "net/http.Handler"),
+			Results: ps("", "*"+storePkg+".Ref"), Pos: "store/typerefs.go:34:6"},
+		{ID: storePkg + ".smallest", Name: "smallest", Package: storePkg, Params: ps("xs", "[]T"), Results: ps("", "T"), Pos: "store/typerefs.go:51:6"},
 	}
 
 	// Closures have their own test.
@@ -242,14 +250,15 @@ func TestCallGraphExternal(t *testing.T) {
 }
 
 // Dependencies are the packages outside the repo that IDs name, wherever
-// they come from: functions, fields (req.URL.Path's net/url) and vars
-// (os.Args). The walk sees the same objects through go/packages, whose
-// dependencies come from export data and import less, so it finds the same.
+// they come from: functions, fields (req.URL.Path's net/url), vars
+// (os.Args) and type refs (time.Duration). The walk sees the same objects
+// through go/packages, whose dependencies come from export data and import
+// less, so it finds the same.
 func TestCallGraphDependencies(t *testing.T) {
 	g := buildFixtureCallGraph(t)
 	want := []Dependency{
 		{"fmt", "fmt"}, {"io", "io"}, {"net/http", "http"}, {"net/url", "url"},
-		{"os", "os"}, {"sort", "sort"}, {"sync", "sync"},
+		{"os", "os"}, {"sort", "sort"}, {"sync", "sync"}, {"time", "time"},
 	}
 	if !slices.Equal(g.Dependencies, want) {
 		t.Errorf("dependencies = %v, want %v", g.Dependencies, want)
@@ -313,6 +322,8 @@ func TestCallGraphClosures(t *testing.T) {
 		// Locals holding functions.
 		closure(idLocals, 1, cat("61:7"), nil, nil),
 		closure(idLocals, 2, cat("64:2"), nil, nil),
+		// Type refs.
+		closure(storePkg+".refsIn", 1, "store/typerefs.go:47:6", ps("r", storePkg+".Ref"), ps("", modelPkg+".User")),
 	}
 	// A blank var has no node: its closure is the package's, named after _.
 	blank := closure(storePkg+"._", 1, cat("51:9"), nil, ps("", "int"))

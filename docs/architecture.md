@@ -37,6 +37,7 @@ CallGraph
 ├── External        []Function         nodes outside the repo that calls and func values name
 ├── Calls           []FunctionCall     edges: caller → callee
 ├── Accesses        []Access           edges: function → var / field it writes, reads or escapes
+├── TypeRefs        []TypeRef          edges: function → type it names
 ├── Implementations []Implementation   edges: type → interface
 └── Dependencies    []Dependency       packages outside the repo that IDs name, with their names
 (+ PackageGraph: package nodes and import edges)
@@ -106,6 +107,14 @@ Pos       "file:line:col" of the site (start of the expression)
 Kind      assign | update | content | construct | read | escape
 Func      assign / construct: the function the written value is, like Arg.Func
           (cobra.Command{RunE: func…}, s.onErr = h); "" otherwise
+```
+
+**`TypeRef`**: one per place code names a type.
+
+```
+Referrer  a function ID, or a package path for package-level code
+Type      a type ID, in the repo or not
+Pos       "file:line:col" of the name (start of pkg.T)
 ```
 
 **`Implementation`**: a concrete repo type satisfies an interface: one declared in the repo, or one from outside it that the repo calls methods through (`io.Writer`, `error`), which has no `Type` node; the methods called through it are `External` nodes.
@@ -221,6 +230,30 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 - Interface methods: explicit ones only; embedded ones belong to their own interface and are linked through `Embeds`.
 - Owners are resolved through the type checker (pointer removed, alias resolved, then `typeID`), not by editing strings.
 
+### Type refs (#68)
+- Purpose: a use count for types (`find`), and what breaks when a type changes (`impact`).
+- Where code names a type:
+  - signatures (closures' too);
+  - fields and embedded fields;
+  - interface methods and embeds;
+  - underlying and alias types;
+  - type params' constraints;
+  - var and const types;
+  - literals, conversions, `new` / `make`;
+  - assertions and type switch cases;
+  - generic instances (`List[int]` is `List[T]`'s ref);
+  - method expressions;
+  - local types.
+- Not refs:
+  - receivers: `Owner` already links a method to its type, and counting them would make a type's count grow with its method count;
+  - type params;
+  - built-in types (`string`, `error`, `any`).
+- Found where consts are read: every type name already reaches `expr`, so one dispatch (`name`) sends type names to `addTypeRef` and the rest to `addValueRead`. That is why consts and refs have the same referrers: package-level declarations (struct fields, interface methods, var types) have the package as referrer; the field's `Pos` is on the ref's line.
+- An edge list of its own, not an `Access` kind: accesses are about a value (assign, read, escape), and a type isn't one. Not derived from type strings either: uses in bodies have no other record, generic and local types print differently from their IDs, and the strings have no positions.
+- One edge per place a type is written, like calls and accesses: `func f(a, b T)` names `T` once. Outside types are kept (`http.Request`), like outside callees and fields.
+- Checked against `go/types`' own `Uses` (receivers and type params left out, `pkg.T` at `pkg`): every position matches on caddy (7,006) and Kubernetes (171,822).
+- Cost, Kubernetes: the graph JSON grows from 226 to 267 MB, the store from 453 to 489 MB. A warm `analyze` takes about 0.8s longer (5.3–5.9s → 6.2–6.5s), with peak memory up about 400 MB (the JSON output is built whole, #38). Queries load without the store; their time and peak are within noise.
+
 ### Interface resolution (M1b)
 - Record facts (`Implementation`) instead of "might call" edges, which would be noisy (caddy's `Module` has 137 implementations).
 - `PointerOnly` distinguishes `*T` from `T`.
@@ -256,7 +289,7 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 - Escapes of contents (plus the read): a slice or map field or var passed to a function, stored (`m := s.users`, `o.x = s.items`, `T{items: s.items}`), returned, or sent. Only when the expression is the field itself (not `s.items[1:]`); builtins and conversions excluded. Pointers excluded on purpose: "the contents of `db` may change" is true of every pointer field and tells users nothing.
 - Other method calls through a field are reads: pointer field (`s.db.Query`), value receiver (`s.cfg.Addr`), interface (`s.h.ServeHTTP`), func field (`s.onError(err)`).
 - Consts: repo consts are read; outside consts (`time.Second`, `http.StatusOK`) get no edge: they can't change and no consumer needs them. Outside fields and vars are kept (`r.Header`, `os.Args`), like writes; human output hides them by default.
-- Consts are read wherever a type is written: type declarations, signatures (closures too), var types, literal types (`[Max]byte{}`), conversions. Package-level values and types (`type T [Max]byte`, `var t [Max]int`) have the package as accessor; code inside package-level closures has the closure. Generic fields use `Origin()`, like writes.
+- Consts are read wherever a type is written: type declarations and their type params' constraints (#69), signatures (closures too), var types, literal types (`[Max]byte{}`), conversions. Package-level values and types (`type T [Max]byte`, `var t [Max]int`) have the package as accessor; code inside package-level closures has the closure. Generic fields use `Origin()`, like writes.
 - Don't guess what callees do: whether a method changes its receiver isn't decidable at the site (outside bodies are dropped, interfaces have many implementations), so the site records facts and a later analysis may summarize methods (needs the root of each write).
 
 ### Through (M1e)
@@ -414,4 +447,9 @@ CallGraphBuilder.Add (a load.Walk: each repo package during the load; BuildCallG
 | Aliasing through locals | `m := s.users; m[k] = v` writes into `Store.users` but gets no `content` edge; the `escape` at `m := s.users` makes the gap visible |
 | Pointer contents | `s.db.Close()`, `f(s.db)` may change what `db` points to; no edge by design (only direct writes like `s.db.x = 1` give `content`) |
 | Method summaries | whether a method changes its receiver, transitively; deferred, needs the root of each write on `Access` |
+| Type refs: uses without a name | `x := f()` uses `T` without naming it, so no ref; what `x` is used for is in `Access` (fields) and calls (methods) (#68) |
+| Type refs: kinds | a ref doesn't say whether it's a literal, conversion, signature or assertion; add when `impact` needs it (#68) |
+| Type refs: package-level referrers | fields and interface methods of a package-level type have the package as referrer, not the type (Type refs) |
+| #70: test files | `_test.go` files aren't loaded: calls, accesses and refs from tests are missing |
+| #71: other platforms | only the current `GOOS` / `GOARCH` and default build tags are loaded |
 | Type strings of local types | `types.TypeString` prints a local `result` as `pkg.result`, so a param or field of a local type doesn't show its `#n` ID |
