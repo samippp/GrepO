@@ -188,6 +188,11 @@ func TestCallGraphIsSorted(t *testing.T) {
 	}) {
 		t.Error("Accesses are not sorted by Accessor, then Pos, then Target, then Kind")
 	}
+	if !slices.IsSortedFunc(g.TypeRefs, func(a, b TypeRef) int {
+		return cmp.Or(cmp.Compare(a.Referrer, b.Referrer), cmp.Compare(a.Pos, b.Pos), cmp.Compare(a.Type, b.Type))
+	}) {
+		t.Error("TypeRefs are not sorted by Referrer, then Pos, then Type")
+	}
 }
 
 // Each package's share of the graph depends only on that package and which of
@@ -204,6 +209,7 @@ func TestBuildPackage(t *testing.T) {
 	var functions []Function
 	var calls []FunctionCall
 	var accesses []Access
+	var typeRefs []TypeRef
 	for _, pkg := range res.Packages {
 		b := buildPackage(pkg, res.Dir, repoImports(pkg, repo))
 
@@ -232,12 +238,16 @@ func TestBuildPackage(t *testing.T) {
 		for _, x := range b.accesses {
 			inPkg("access by", x.Accessor, x.Pos)
 		}
+		for _, x := range b.typeRefs {
+			inPkg("type ref by", x.Referrer, x.Pos)
+		}
 
 		types = append(types, b.types...)
 		variables = append(variables, b.variables...)
 		functions = append(functions, b.functions...)
 		calls = append(calls, b.calls...)
 		accesses = append(accesses, b.accesses...)
+		typeRefs = append(typeRefs, b.typeRefs...)
 	}
 
 	checkExact(t, "type", types, g.Types, func(ty Type) string { return fmt.Sprintf("%+v", ty) })
@@ -245,6 +255,7 @@ func TestBuildPackage(t *testing.T) {
 	checkExact(t, "function", functions, g.Functions, formatFunction)
 	checkExact(t, "call", calls, g.Calls, formatCall)
 	checkExact(t, "access", accesses, g.Accesses, formatAccess)
+	checkExact(t, "type ref", typeRefs, g.TypeRefs, formatTypeRef)
 }
 
 // A package's share is the same whether its walk sees every repo package

@@ -6,6 +6,7 @@ import (
 )
 
 func TestCallGraphTypes(t *testing.T) {
+	tRef := storePkg + ".Ref"
 	g := buildFixtureCallGraph(t)
 
 	st, mt := "store/store.go:", "model/kinds.go:"
@@ -144,6 +145,26 @@ func TestCallGraphTypes(t *testing.T) {
 			Fields: []Field{emb(tShadowed, "conn", "*"+tConn, pat("24:24"))}},
 		{ID: tOSFile, Name: "osFile", Package: storePkg, Kind: StructType, Pos: pat("31:6"),
 			Fields: []Field{emb(tOSFile, "File", "*os.File", pat("31:25"))}},
+
+		// A const in a constraint (store/consts.go).
+		{ID: storePkg + ".bounded[T]", Name: "bounded", Package: storePkg, Kind: StructType, Pos: "store/consts.go:13:6",
+			Fields: []Field{fld(storePkg+".bounded[T]", "v", "T", "store/consts.go:13:45")}},
+
+		// The type refs fixture (store/typerefs.go).
+		{ID: tRef, Name: "Ref", Package: storePkg, Kind: StructType, Exported: true, Pos: tat("11:6"), Fields: []Field{
+			fld(tRef, "Next", "*"+tRef, tat("12:2")),
+			emb(tRef, "User", modelPkg+".User", tat("13:8")),
+			fld(tRef, "Req", "*net/http.Request", tat("14:2")),
+			fld(tRef, "refs", storePkg+".Refs", tat("15:2")),
+		}},
+		{ID: storePkg + ".Refs", Name: "Refs", Package: storePkg, Kind: OtherType, Exported: true, Pos: tat("18:6"), Underlying: "[]" + tRef},
+		{ID: storePkg + ".RefAlias", Name: "RefAlias", Package: storePkg, Kind: AliasType, Exported: true, Pos: tat("20:6"), Target: tRef},
+		{ID: storePkg + ".Ordered", Name: "Ordered", Package: storePkg, Kind: InterfaceType, Exported: true, Pos: tat("22:6"), Embeds: []string{"~int | ~string"}},
+		{ID: storePkg + ".Sorted[T]", Name: "Sorted", Package: storePkg, Kind: StructType, Exported: true, Pos: tat("24:6"),
+			Fields: []Field{fld(storePkg+".Sorted[T]", "items", "[]T", tat("24:32"))}},
+		{ID: storePkg + ".Namer", Name: "Namer", Package: storePkg, Kind: InterfaceType, Exported: true, Pos: tat("26:6")},
+		{ID: storePkg + ".refsIn.local#1", Name: "local", Package: storePkg, Kind: StructType, Pos: tat("45:7"),
+			Fields: []Field{fld(storePkg+".refsIn.local#1", "r", tRef, tat("45:21"))}},
 	}
 
 	checkExact(t, "type", g.Types, want, func(ty Type) string { return fmt.Sprintf("%+v", ty) })
@@ -211,6 +232,8 @@ func TestCallGraphImplementations(t *testing.T) {
 }
 
 // fld is a field of the type owner; emb is an embedded one.
+func tat(line string) string { return "store/typerefs.go:" + line }
+
 func fld(owner, name, typ, pos string) Field {
 	return Field{ID: owner + "." + name, Name: name, Type: typ, Pos: pos}
 }

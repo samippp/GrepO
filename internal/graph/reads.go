@@ -33,7 +33,7 @@ func (b *callGraphBuilder) addValueRead(accessor string, obj types.Object, pos t
 func (b *callGraphBuilder) addSelector(accessor string, x *ast.SelectorExpr) {
 	sel := b.pkg.TypesInfo.Selections[x]
 	if sel == nil {
-		b.addValueRead(accessor, b.pkg.TypesInfo.Uses[x.Sel], x.Pos()) // pkg.Name
+		b.name(accessor, b.pkg.TypesInfo.Uses[x.Sel], x.Pos()) // pkg.Name
 		return
 	}
 	switch sel.Kind() {
@@ -43,8 +43,9 @@ func (b *callGraphBuilder) addSelector(accessor string, x *ast.SelectorExpr) {
 		b.expr(accessor, x.X)
 	case types.MethodVal:
 		b.addReceiver(accessor, x, sel)
+	case types.MethodExpr:
+		b.expr(accessor, x.X) // (*T).M: x.X is a type
 	}
-	// MethodExpr ((*T).M): x.X is a type.
 }
 
 // addReceiver records the receiver of a method call or method value: an

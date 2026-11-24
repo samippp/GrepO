@@ -122,6 +122,9 @@ func TestCallGraphAccesses(t *testing.T) {
 		w(idWritesR, tRHolder+".Items", rat("87:2"), UpdateAccess),
 		w(idHands, tRHolder+".Items", rat("130:2"), AssignAccess),
 		w(idHands, tRHolder+".Items", rat("131:13"), ConstructAccess),
+		// The type refs fixture.
+		w(storePkg, storePkg+".defaultRef", "store/typerefs.go:30:5", ConstructAccess),
+		w(storePkg+".refsIn", storePkg+".Ref.Next", "store/typerefs.go:36:14", ConstructAccess),
 	}
 
 	// Reads and escapes have their own test.

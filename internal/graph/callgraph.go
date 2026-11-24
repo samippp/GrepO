@@ -138,6 +138,14 @@ const (
 	EscapeAccess    AccessKind = "escape"    // access is handed out: &x, a pointer method on x, a slice or map passed on
 )
 
+// TypeRef is one place code names a type: a signature, a declaration, a
+// literal, a conversion, an assertion. Receivers aren't refs.
+type TypeRef struct {
+	Referrer string `json:"referrer"` // function ID, or the package for package-level code
+	Type     string `json:"type"`     // TypeID, in the repo or not
+	Pos      string `json:"pos"`      // start of the name: pkg.T at pkg
+}
+
 // CallGraph holds the repo's functions and the calls made inside them.
 type CallGraph struct {
 	Types     []Type         `json:"types"`
@@ -146,6 +154,7 @@ type CallGraph struct {
 	External  []Function     `json:"external"` // outside the repo, named by calls and func values: no Pos
 	Calls     []FunctionCall `json:"calls"`
 	Accesses  []Access       `json:"accesses"`
+	TypeRefs  []TypeRef      `json:"typeRefs"`
 
 	Implementations []Implementation `json:"implementations"`
 
@@ -270,6 +279,7 @@ func (cb *CallGraphBuilder) CallGraph() (g *CallGraph, shares map[string][]byte,
 		External:     []Function{},
 		Calls:        []FunctionCall{},
 		Accesses:     []Access{},
+		TypeRefs:     []TypeRef{},
 		Dependencies: []Dependency{},
 		ids:          maps.Clone(cb.ids),
 		closures:     maps.Clone(cb.closures),
@@ -284,6 +294,7 @@ func (cb *CallGraphBuilder) CallGraph() (g *CallGraph, shares map[string][]byte,
 		g.Functions = append(g.Functions, s.Functions...)
 		g.Calls = append(g.Calls, s.Calls...)
 		g.Accesses = append(g.Accesses, s.Accesses...)
+		g.TypeRefs = append(g.TypeRefs, s.TypeRefs...)
 		summaries = append(summaries, s.Summary)
 		for _, f := range s.External {
 			if cb.shares[f.Package] == nil { // a repo function has its own node
@@ -315,6 +326,7 @@ type share struct {
 	External  []Function     `json:"external"`
 	Calls     []FunctionCall `json:"calls"`
 	Accesses  []Access       `json:"accesses"`
+	TypeRefs  []TypeRef      `json:"typeRefs"`
 	Summary   typeSummary    `json:"summary"`
 
 	Dependencies map[string]string `json:"dependencies"` // path → name, repo packages too
@@ -328,6 +340,7 @@ func (b *callGraphBuilder) share() *share {
 		External:  slices.SortedFunc(maps.Values(b.external), byID),
 		Calls:     b.calls,
 		Accesses:  b.accesses,
+		TypeRefs:  b.typeRefs,
 		Summary:   b.summary,
 
 		Dependencies: b.deps,
@@ -388,8 +401,8 @@ func buildPackage(pkg *load.Package, root string, repo map[string]bool) *callGra
 	return b
 }
 
-// sort orders every list, whatever order packages were built in. Calls and
-// accesses that tie come from one walk and keep its order.
+// sort orders every list, whatever order packages were built in. Calls,
+// accesses and type refs that tie come from one walk and keep its order.
 func (g *CallGraph) sort() {
 	slices.SortFunc(g.Types, func(x, y Type) int {
 		return cmp.Compare(x.ID, y.ID)
@@ -415,6 +428,13 @@ func (g *CallGraph) sort() {
 			cmp.Compare(x.Pos, y.Pos),
 			cmp.Compare(x.Target, y.Target),
 			cmp.Compare(x.Kind, y.Kind),
+		)
+	})
+	slices.SortStableFunc(g.TypeRefs, func(x, y TypeRef) int {
+		return cmp.Or(
+			cmp.Compare(x.Referrer, y.Referrer),
+			cmp.Compare(x.Pos, y.Pos),
+			cmp.Compare(x.Type, y.Type),
 		)
 	})
 }
@@ -459,6 +479,7 @@ type callGraphBuilder struct {
 	functions []Function
 	calls     []FunctionCall
 	accesses  []Access
+	typeRefs  []TypeRef
 
 	summary typeSummary // types by method set, for matchImplementations after the merge
 }
@@ -470,7 +491,7 @@ func (b *callGraphBuilder) handleGenDecl(genDecl *ast.GenDecl) {
 		for _, spec := range genDecl.Specs {
 			spec := spec.(*ast.TypeSpec) // TYPE decls only hold TypeSpecs
 			b.handleTypeSpec(spec)
-			b.expr(b.pkg.PkgPath, spec.Type) // consts in it: type T [Max]byte
+			b.typeSpec(b.pkg.PkgPath, spec)
 		}
 	case token.VAR, token.CONST:
 		for _, spec := range genDecl.Specs {

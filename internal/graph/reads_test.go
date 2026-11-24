@@ -135,7 +135,9 @@ func TestCallGraphReads(t *testing.T) {
 		r(storePkg, maxUsers, "164:12"),
 
 		// A repo const from another package (store/consts.go): read too.
-		{Accessor: storePkg + ".tagLimit", Target: modelPkg + ".MaxTag", Pos: "store/consts.go:6:30", Kind: ReadAccess},
+		{Accessor: storePkg + ".tagLimit", Target: modelPkg + ".MaxTag", Pos: "store/consts.go:10:30", Kind: ReadAccess},
+		// In a generic type's constraint, by the package (#69).
+		{Accessor: storePkg, Target: modelPkg + ".MaxTag", Pos: "store/consts.go:13:18", Kind: ReadAccess},
 	}
 
 	var got []Access

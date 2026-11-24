@@ -41,7 +41,7 @@ func TestBuildPackageGraph(t *testing.T) {
 	if store.Dir != "store" {
 		t.Errorf("store dir = %q, want store", store.Dir)
 	}
-	if !slices.Equal(store.Imports.Stdlib, []string{"io", "net/http", "os", "sort", "sync"}) {
+	if !slices.Equal(store.Imports.Stdlib, []string{"io", "net/http", "os", "sort", "sync", "time"}) {
 		t.Errorf("store stdlib imports = %v, want [io net/http os sort sync]", store.Imports.Stdlib)
 	}
 }

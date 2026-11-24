@@ -47,6 +47,8 @@ func TestCallGraphVariables(t *testing.T) {
 		{ID: storePkg + ".hooks", Name: "hooks", Package: storePkg, Type: "func()", Pos: cat("49:5")},
 		{ID: storePkg + ".fallback", Name: "fallback", Package: storePkg, Type: "func()", Pos: cat("49:12")},
 		{ID: storePkg + ".nested", Name: "nested", Package: storePkg, Type: "func()", Pos: cat("53:5")},
+		{ID: storePkg + ".timeout", Name: "timeout", Package: storePkg, Type: "time.Duration", Pos: "store/consts.go:16:5"},
+		{ID: storePkg + ".defaultRef", Name: "defaultRef", Package: storePkg, Type: storePkg + ".Ref", Pos: "store/typerefs.go:30:5"},
 		{ID: modelPkg + ".MaxTag", Name: "MaxTag", Package: modelPkg, Type: "untyped int", Const: true, Value: "8", Exported: true, Pos: "model/kinds.go:36:7"},
 	}
 
