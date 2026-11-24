@@ -1,6 +1,6 @@
 # grepo output design
 
-How every query command prints its answer: `callers` (done), `callees`, `find`, `state`, `pkg`, `entry`, `impact`, and `grepo mcp`. Commands get built to fit these rules, so later ones don't need their own conventions. `analyze` stays as it is: it dumps the whole graph, and isn't a query.
+How every query command prints its answer: `callers`, `callees` and `find` (done), `state`, `pkg`, `entry`, `impact`, and `grepo mcp`. Commands get built to fit these rules, so later ones don't need their own conventions. `analyze` stays as it is: it dumps the whole graph, and isn't a query.
 
 Status: agreed. Section 9 lists what changes before the next command, and section 10 the decisions made.
 
@@ -77,7 +77,7 @@ A drawn tree (`├─`) was considered and rejected: it breaks rule 1, and quick
 
 ## 5. Per command
 
-`callers` and `callees` exist. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
+`callers`, `callees` and `find` exist. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
 
 **`callers <func>`**: as now, plus columns. `--depth` makes it a tree (section 4).
 ```
@@ -87,11 +87,18 @@ main.go:20:2: main.main: g.Get(2)  [via store.Getter]
 
 **`callees <func>`**: every site in a function that reaches another, by position: its calls, and the functions it passes or stores as values (`[passed to f]`, `[stored in field]`), as `callers` lists those the other way. An interface call is tagged `[interface]`. A call through a local gives a line per function assigned to it, tagged `[through a local]`. A call nothing resolves is `[dynamic]`, named by the field or var it goes through, or `(func value)`. `go` and `defer` join the tag (`[go]`, `[defer]`). `--depth` makes it a tree (section 4).
 
-**`find <word>`** *sketch*: declarations matching a word, ranked by how much they're used, most first.
+**`find <word>`**: the repo's declarations matching a word, most used first, ties by position. Each line is at the declaration (rule 3), its tag the kind and counts. `--kind` keeps some kinds.
 ```
-store/store.go:23:17: (*store.Store).Get  [method, 2 callers]
-store/store.go:12:6: store.Getter  [interface, 1 implementation]
+$ grepo find get
+store/store.go:12:6: store.Getter: type Getter interface {  [interface, 2 refs, 3 implementations]
+store/store.go:13:2: (store.Getter).Get: Get(id int) model.User  [method, 1 caller]
+store/store.go:23:17: (*store.Store).Get: func (s *Store) Get(id int) model.User {  [method, 1 caller, 1 more via an interface]
+store/cache.go:9:16: (store.Cache).Get: func (c Cache) Get(id int) model.User { return model.User{ID: id} }  [method, no callers, 1 via an interface]
 ```
+- **Funcs and methods** rank by callers: `callers`' sites, except those through an interface, which the tag counts as "more via interfaces". The two add up to `callers X | wc -l`.
+- **Fields, vars and consts** rank by writes (assign, update, content, construct) plus reads (read, escape).
+- **Types** rank by refs, the places code names them, with methods or, for an interface, implementations in the tag.
+- Closures and types declared in functions aren't listed. JSON: `{base, word, results}`, each result with `kind`, `id`, `pos`, `line`, `uses` (what it's ranked by) and its kind's counts.
 
 **`state <type|field|var>`** *sketch*: rule 3 in action. A type gives a line per field, at the field, with its role and a count of writes by kind. A field or var gives a line per write site.
 ```
@@ -205,4 +212,5 @@ One tool per command, with the command's flags as arguments. A result is the com
 - **Tree lines:** position first, with the indent in the message (section 4).
 - **Interface calls in diagrams:** the interface method is a node of its own (section 7).
 - **Order:** results by position (`callers`, `callees`, `state`); ranked lists by use (`find`, `pkg` with no path), most used first. On caddy, `find Load` puts `(caddy.Context).LoadModule` (60 callers) first, where by position it would come fifth, behind a `LoadConfig` nothing calls. `| sort` gives position order back.
+- **`find` matching:** a word without a dot matches a declaration's own name, and one with a dot its short name with `(`, `)` and `*` removed (`Context.Load`, `caddytls.`). Both are case-insensitive substrings. Matching plain words against qualified names too would list everything in package `loader` for `find load`.
 - **Closures and inits:** text keeps their IDs (`replaceLocalAdminServer$1$1`, `main.init@main.go#1`), not the enclosing function with a tag. The ID can be passed back as a name, and `$1$1` shows the code runs later (a goroutine or callback), not when its parent runs. JSON adds `fromDecl` (section 6).

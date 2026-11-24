@@ -127,7 +127,8 @@ func TestCallersAmbiguous(t *testing.T) {
 	want := "seal matches 3 functions; name one of them:\n" +
 		filepath.Join(fixture, "model", "impls.go") + ":8:24: (model.Sealed).seal\n" +
 		filepath.Join(fixture, "model", "impls.go") + ":12:14: (model.Token).seal\n" +
-		filepath.Join(fixture, "store", "impls.go") + ":8:13: (store.Fake).seal\n"
+		filepath.Join(fixture, "store", "impls.go") + ":8:13: (store.Fake).seal\n" +
+		"grepo find seal ranks them by use\n"
 	if code != 2 || stdout != "" || stderr != want {
 		t.Errorf("callers seal: exit %d, stdout %q, stderr:\n%s\nwant exit 2, stderr:\n%s", code, stdout, stderr, want)
 	}

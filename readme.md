@@ -18,11 +18,12 @@ One command, one question, answered from the terminal:
 - Graphs can also come out as Mermaid, which GitHub renders in issues, PRs and READMEs, or as DOT.
 - Later runs reuse what an earlier run built, so repeat questions on a large repo don't start over.
 
-Commands (`callers` and `callees` work now; the rest are planned, M3):
+Commands (`callers`, `callees` and `find` work now; the rest are planned, M3):
 
 ```sh
 grepo callers Store.Get        # who calls it, interface calls included
 grepo callees --depth 2 main   # what it calls, as a tree through interfaces
+grepo find Load                # declarations named like it, most used first
 grepo state Store.users        # who writes it, and how
 grepo impact Store.users       # everything that reaches it, by package
 grepo entry                    # where requests and commands start
@@ -35,7 +36,7 @@ grepo pkg --format mermaid     # the package graph, as a diagram for an issue or
 
 **M2a (paused): incremental store.** `analyze` reuses each unchanged package's share of the graph from a SQLite store in your user cache directory; `--no-cache` skips it. Paused while the commands settle what the store should keep.
 
-**M3 (in progress): commands.** `grepo callers <function>` prints every site that can call a function: direct calls, calls through an interface it implements (`io.Writer` and `error` too), and places it's passed or stored as a func value; `--depth n` follows callers' callers as a tree. `grepo callees <function>` is the other way. Commands load the repo from source each time, for now.
+**M3 (in progress): commands.** `grepo callers <function>` prints every site that can call a function: direct calls, calls through an interface it implements (`io.Writer` and `error` too), and places it's passed or stored as a func value; `--depth n` follows callers' callers as a tree. `grepo callees <function>` is the other way. `grepo find <word>` lists declarations named like a word, most used first. Commands load the repo from source each time, for now.
 
 ## Usage
 
@@ -50,6 +51,7 @@ grepo callers --json '(*Server).Serve' ./server  # JSON; ./server's package wins
 grepo callers os.Exit                            # functions outside the repo work too
 grepo callers --depth 3 Store.Get                # callers' callers, indented, 3 levels
 grepo callees --depth 2 --format mermaid main     # a diagram to paste into an issue or PR
+grepo find --kind func,method Load                # don't know the name? most used first
 ```
 
 ```
@@ -60,7 +62,7 @@ modules/caddytls/tls.go:1088:9: (*caddytls.TLS).onEvent: evt := t.events.Emit(t.
 context.go:296:9: (caddy.Context).emitEvent: return ctx.cfg.eventEmitter.Emit(ctx, name, data)  [via caddy.eventEmitter]
 ```
 
-Query commands exit like grep: 0 when they find something, 1 when they don't, 2 on an error, including a name that matches several functions (they're listed, each with a name that picks it).
+Query commands exit like grep: 0 when they find something, 1 when they don't, 2 on an error, including a name that matches several functions (they're listed, each with a name that picks it, and `grepo find` ranks them by use).
 
 Logging flags (available on every command):
 
@@ -148,7 +150,7 @@ Milestone numbers are kept as they were, so references in issues and the docs st
   - Finding your way:
     - `pkg [path]`: imports and imported-by, exported API ranked by callers, owned state and its writers, outside calls; with no path, the repo's packages ranked by how central they are
     - `entry`: main, init, HTTP handlers, CLI commands, exported API: where to start reading (was M4)
-    - `find <word>`: symbols matching a word, ranked, for when you don't know the names yet
+    - `find <word>`: declarations matching a word, ranked by use (callers, reads and writes, refs), for when you don't know the names yet ✅
   - For agents: `grepo mcp`, the same queries as MCP tools over stdio; one long-running process keeps the graph loaded between questions
 - **M4: deeper facts**
   - side effects (`effects <func>`: reaches I/O, network, database, exec, globals)
