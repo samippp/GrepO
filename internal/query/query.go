@@ -31,6 +31,13 @@ type Index struct {
 	impls    map[string][]graph.Implementation // by concrete type ID
 	ifaces   map[string][]graph.Implementation // by interface ID
 	promoted map[string][]graph.Implementation // by the function ID of a method promoted for them
+	vars     []*graph.Variable
+
+	// Counts for find, not lists, to keep the Index small (#72).
+	refs        map[string]int // TypeRefs, by type
+	methodCount map[string]int // repo methods, by Owner
+	writes      map[string]int // by var or field
+	reads       map[string]int
 }
 
 type method struct{ owner, name string }
@@ -55,6 +62,11 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		impls:    map[string][]graph.Implementation{},
 		ifaces:   map[string][]graph.Implementation{},
 		promoted: map[string][]graph.Implementation{},
+
+		refs:        map[string]int{},
+		methodCount: map[string]int{},
+		writes:      map[string]int{},
+		reads:       map[string]int{},
 	}
 	for _, p := range pg.Packages {
 		ix.names[p.Path] = p.Name
@@ -68,6 +80,9 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		ix.add(f)
 		if f.Parent == "" && !strings.Contains(f.Owner, "#") { // local type IDs hold "#n"
 			ix.byName[f.Name] = append(ix.byName[f.Name], f)
+		}
+		if f.Owner != "" {
+			ix.methodCount[f.Owner]++
 		}
 	}
 	for i := range cg.External {
@@ -93,10 +108,23 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		}
 	}
 	for i := range cg.Accesses {
-		if a := &cg.Accesses[i]; a.Func != "" {
+		a := &cg.Accesses[i]
+		if a.Func != "" {
 			ix.stores[a.Accessor] = append(ix.stores[a.Accessor], a)
 			ix.byStored[a.Func] = append(ix.byStored[a.Func], a)
 		}
+		switch a.Kind {
+		case graph.ReadAccess, graph.EscapeAccess:
+			ix.reads[a.Target]++
+		default:
+			ix.writes[a.Target]++
+		}
+	}
+	for i := range cg.Variables {
+		ix.vars = append(ix.vars, &cg.Variables[i])
+	}
+	for _, r := range cg.TypeRefs {
+		ix.refs[r.Type]++
 	}
 	for i := range cg.Types {
 		ix.types[cg.Types[i].ID] = &cg.Types[i]
@@ -168,7 +196,7 @@ func (ix *Index) Func(name, prefer string) (*graph.Function, error) {
 	if f := ix.funcs[name]; f != nil {
 		return f, nil
 	}
-	clean := stripTypeArgs(strings.NewReplacer("(", "", ")", "", "*", "").Replace(name))
+	clean := CleanName(name)
 	qual, fname := "", clean
 	if i := strings.LastIndex(clean, "."); i >= 0 {
 		qual, fname = clean[:i], clean[i+1:]

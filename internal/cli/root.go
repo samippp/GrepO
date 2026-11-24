@@ -61,6 +61,7 @@ func newRootCmd(a *app) *cobra.Command {
 	root.AddCommand(newAnalyzeCmd(a))
 	root.AddCommand(newCallersCmd(a))
 	root.AddCommand(newCalleesCmd(a))
+	root.AddCommand(newFindCmd(a))
 	root.AddCommand(newVTADiffCmd(a))
 	return root
 }

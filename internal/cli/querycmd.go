@@ -145,6 +145,7 @@ func (p *printer) ambiguous(w io.Writer, err *query.AmbiguousError) error {
 			fmt.Fprintf(w, "%s: %s\n", p.path(f.Pos), name)
 		}
 	}
+	fmt.Fprintf(w, "grepo find %s ranks them by use\n", query.CleanName(err.Name))
 	return reportedError{err}
 }
 
