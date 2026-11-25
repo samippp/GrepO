@@ -124,11 +124,7 @@ Exit codes, as grep's: 0 sites found, 1 none, 2 error.`,
 func printCallers(w io.Writer, p *printer, nodes []*query.Node, level int) error {
 	ix := p.rg.ix
 	for _, n := range nodes {
-		from := ix.Short(n.From)
-		if ix.IsPackage(n.From) {
-			from += " (package level)"
-		}
-		text := p.path(n.Pos) + ": " + strings.Repeat("  ", level) + from
+		text := p.path(n.Pos) + ": " + strings.Repeat("  ", level) + p.from(n.From)
 		if line := p.line(n.Pos); line != "" {
 			text += ": " + line
 		}
