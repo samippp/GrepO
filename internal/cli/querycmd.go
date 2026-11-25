@@ -129,24 +129,44 @@ func (p *printer) line(pos string) string {
 // short name, or its ID when two short names collide. It returns the
 // error to exit with.
 func (p *printer) ambiguous(w io.Writer, err *query.AmbiguousError) error {
-	short := map[string]int{}
+	type candidate struct{ id, pos string }
+	var cands []candidate
+	noun := "functions"
 	for _, f := range err.Candidates {
-		short[p.rg.ix.Short(f.ID)]++
+		cands = append(cands, candidate{f.ID, f.Pos})
 	}
-	fmt.Fprintf(w, "%s matches %d functions; name one of them:\n", err.Name, len(err.Candidates))
-	for _, f := range err.Candidates {
-		name := p.rg.ix.Short(f.ID)
-		if short[name] > 1 {
-			name = f.ID
+	if err.Targets != nil {
+		noun = "declarations"
+		for _, t := range err.Targets {
+			cands = append(cands, candidate{t.ID, t.Pos})
 		}
-		if f.Pos == "" {
+	}
+	short := map[string]int{}
+	for _, c := range cands {
+		short[p.rg.ix.Short(c.id)]++
+	}
+	fmt.Fprintf(w, "%s matches %d %s; name one of them:\n", err.Name, len(cands), noun)
+	for _, c := range cands {
+		name := p.rg.ix.Short(c.id)
+		if short[name] > 1 {
+			name = c.id
+		}
+		if c.pos == "" {
 			fmt.Fprintf(w, "%s (outside the repo)\n", name)
 		} else {
-			fmt.Fprintf(w, "%s: %s\n", p.path(f.Pos), name)
+			fmt.Fprintf(w, "%s: %s\n", p.path(c.pos), name)
 		}
 	}
 	fmt.Fprintf(w, "grepo find %s ranks them by use\n", query.CleanName(err.Name))
 	return reportedError{err}
+}
+
+// from is a site's From as text: its short name, "(package level)" after a package.
+func (p *printer) from(id string) string {
+	if p.rg.ix.IsPackage(id) {
+		return p.rg.ix.Short(id) + " (package level)"
+	}
+	return p.rg.ix.Short(id)
 }
 
 // valueTag is "passed to f" or "stored in field".

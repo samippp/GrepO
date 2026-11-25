@@ -18,11 +18,17 @@ func findIndex() *Index {
 		Types: []graph.Type{
 			{ID: tGetter, Name: "Getter", Package: store, Kind: graph.InterfaceType, Pos: "store/store.go:5:6"},
 			{ID: tStore, Name: "Store", Package: store, Kind: graph.StructType, Pos: "store/store.go:9:6", Fields: []graph.Field{
-				{ID: fUsers, Name: "users", Pos: "store/store.go:10:2"},
-				{ID: tStore + ".getCount", Name: "getCount", Pos: "store/store.go:11:2"},
+				{ID: fUsers, Name: "users", Type: "map[int]string", Pos: "store/store.go:10:2"},
+				{ID: tStore + ".getCount", Name: "getCount", Type: "int", Pos: "store/store.go:11:2"},
+				{ID: tStore + ".hits", Name: "hits", Type: "int", Pos: "store/store.go:12:2"},
+				{ID: tStore + ".label", Name: "label", Type: "string", Pos: "store/store.go:13:2"},
+				{ID: tStore + ".created", Name: "created", Type: "int64", Pos: "store/store.go:15:2"},
 			}},
-			{ID: tCache, Name: "Cache", Package: store, Kind: graph.StructType, Pos: "store/cache.go:3:6"},
+			{ID: tCache, Name: "Cache", Package: store, Kind: graph.StructType, Pos: "store/cache.go:3:6", Fields: []graph.Field{
+				{ID: tCache + ".hits", Name: "hits", Type: "int", Pos: "store/cache.go:3:20"},
+			}},
 			{ID: store + ".ID", Name: "ID", Package: store, Kind: graph.AliasType, Pos: "store/store.go:3:6"},
+			{ID: store + ".S", Name: "S", Package: store, Kind: graph.AliasType, Target: tStore, Pos: "store/alias.go:3:6"},
 			{ID: store + ".Count", Name: "Count", Package: store, Kind: graph.OtherType, Pos: "store/store.go:4:6"},
 			// A local type, its field and its method: not declarations find lists.
 			{ID: app + ".run.getter#1", Name: "getter", Package: app, Kind: graph.StructType, Pos: "main.go:30:7", Fields: []graph.Field{
@@ -58,6 +64,11 @@ func findIndex() *Index {
 			{Accessor: idGet, Target: fUsers, Pos: "store/store.go:23:2", Kind: graph.ContentAccess},
 			{Accessor: idGet, Target: fUsers, Pos: "store/store.go:24:2", Kind: graph.ReadAccess},
 			{Accessor: idGet, Target: fUsers, Pos: "store/store.go:25:2", Kind: graph.EscapeAccess},
+			{Accessor: idGet, Target: tStore + ".hits", Pos: "store/store.go:27:2", Kind: graph.UpdateAccess},
+			{Accessor: store, Target: tStore + ".hits", Pos: "store/store.go:8:2", Kind: graph.UpdateAccess}, // package level
+			{Accessor: idGet, Target: tStore + ".hits", Pos: "store/store.go:28:2", Kind: graph.EscapeAccess},
+			{Accessor: idGet, Target: tStore + ".label", Pos: "store/store.go:29:2", Kind: graph.UpdateAccess},
+			{Accessor: store + ".New", Target: tStore + ".created", Pos: "store/store.go:20:9", Kind: graph.ConstructAccess},
 			{Accessor: idGet, Target: store + ".maxGets", Pos: "store/store.go:26:2", Kind: graph.ReadAccess},
 		},
 		TypeRefs: []graph.TypeRef{
@@ -133,7 +144,10 @@ func TestFind(t *testing.T) {
 			"store/store.go:4:6 type store.Count: refs 0 methods 0 impls 0, uses 0",
 		}},
 		// A word with a dot matches the short name, ( ) and * removed.
-		{word: "Cache.", want: []string{"store/cache.go:5:16 method (store.Cache).Get: callers 0 via 1, uses 0"}},
+		{word: "Cache.", want: []string{
+			"store/cache.go:3:20 field store.Cache.hits: writes 0 reads 0, uses 0",
+			"store/cache.go:5:16 method (store.Cache).Get: callers 0 via 1, uses 0",
+		}},
 		// A substring still: store.Get is in store.Getter.Get.
 		{word: "(*Store).Get", kinds: []DeclKind{MethodDecl}, want: []string{
 			"store/store.go:14:17 method (*store.Store).Get: callers 2 via 1, uses 2",

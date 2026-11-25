@@ -1,6 +1,6 @@
 # grepo output design
 
-How every query command prints its answer: `callers`, `callees` and `find` (done), `state`, `pkg`, `entry`, `impact`, and `grepo mcp`. Commands get built to fit these rules, so later ones don't need their own conventions. `analyze` stays as it is: it dumps the whole graph, and isn't a query.
+How every query command prints its answer: `callers`, `callees`, `find` and `state` (done), `pkg`, `entry`, `impact`, and `grepo mcp`. Commands get built to fit these rules, so later ones don't need their own conventions. `analyze` stays as it is: it dumps the whole graph, and isn't a query.
 
 Status: agreed. Section 9 lists what changes before the next command, and section 10 the decisions made.
 
@@ -77,7 +77,7 @@ A drawn tree (`├─`) was considered and rejected: it breaks rule 1, and quick
 
 ## 5. Per command
 
-`callers`, `callees` and `find` exist. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
+`callers`, `callees`, `find` and `state` exist. The others are *sketches* of how they fit the rules. Each command's own design settles its details.
 
 **`callers <func>`**: as now, plus columns. `--depth` makes it a tree (section 4).
 ```
@@ -100,14 +100,22 @@ store/cache.go:9:16: (store.Cache).Get: func (c Cache) Get(id int) model.User { 
 - **Types** rank by refs, the places code names them, with methods or, for an interface, implementations in the tag.
 - Closures and types declared in functions aren't listed. JSON: `{base, word, results}`, each result with `kind`, `id`, `pos`, `line`, `uses` (what it's ranked by) and its kind's counts.
 
-**`state <type|field|var>`** *sketch*: rule 3 in action. A type gives a line per field, at the field, with its role and a count of writes by kind. A field or var gives a line per write site.
+**`state <struct|field|var>`**: rule 3 in action. A struct gives a line per field, at the field, with its writes by kind and escapes. A field or var gives a line per site that writes it or hands out access to it, by position; `--reads` adds reads.
 ```
+$ grepo state Holder
+store/reads.go:23:2: store.Holder.N: N     int  [counter: 2 updates, 1 escape]
+store/reads.go:24:2: store.Holder.Step: Step  int  [no writes found]
+store/reads.go:26:2: store.Holder.Items: Items []int  [1 assign, 1 construct, 1 update, 4 escapes]
 $ grepo state Store
-store/store.go:17:2: Store.mu: mu sync.Mutex  [no writes found]
-store/store.go:18:2: Store.users: users map[int]model.User  [config: 1 construct]
-$ grepo state Store.users
+store/store.go:17:2: store.Store.mu: mu    sync.Mutex  [no writes found, 2 escapes]
+store/store.go:18:2: store.Store.users: users map[int]model.User  [set at construction: 1 construct]
+$ grepo state --reads Store.users
 store/store.go:21:35: store.New: func New() *Store { return &Store{users: map[int]model.User{}} }  [construct]
+store/store.go:26:9: (*store.Store).Get: return s.users[id]  [read]
 ```
+- **Roles** only where the writes settle one: "no writes found", "set at construction" (construct writes only), "counter" (a number, update writes only). Escapes are always counted, so a field with none of its own writes doesn't read as unchanged. "found" because writes by reflection (`encoding/json` filling a config struct) aren't seen: on caddy, 164 of 1,537 fields have no writes.
+- **Names** as `callers` takes them; an alias of a struct is the struct. Repo types, fields and vars only, for now.
+- JSON: a struct gives `{base, type, fields}`, each field with `role`, `writes` by kind and `escapes`; a field or var gives `{base, field | var, sites}`, sites in the shared shape with `kind` write, escape or read and `access` the access kind.
 
 **`pkg [path]`** *sketch*: with no path, packages ranked by how central they are, located at their directories. With a path, the package's facts, one per line, each tagged with what it is.
 ```
@@ -212,5 +220,6 @@ One tool per command, with the command's flags as arguments. A result is the com
 - **Tree lines:** position first, with the indent in the message (section 4).
 - **Interface calls in diagrams:** the interface method is a node of its own (section 7).
 - **Order:** results by position (`callers`, `callees`, `state`); ranked lists by use (`find`, `pkg` with no path), most used first. On caddy, `find Load` puts `(caddy.Context).LoadModule` (60 callers) first, where by position it would come fifth, behind a `LoadConfig` nothing calls. `| sort` gives position order back.
+- **`state` roles:** counts always, a role only where the counts settle it (above). "config" and "live state", as first sketched, were guesses.
 - **`find` matching:** a word without a dot matches a declaration's own name, and one with a dot its short name with `(`, `)` and `*` removed (`Context.Load`, `caddytls.`). Both are case-insensitive substrings. Matching plain words against qualified names too would list everything in package `loader` for `find load`.
 - **Closures and inits:** text keeps their IDs (`replaceLocalAdminServer$1$1`, `main.init@main.go#1`), not the enclosing function with a tag. The ID can be passed back as a name, and `$1$1` shows the code runs later (a goroutine or callback), not when its parent runs. JSON adds `fromDecl` (section 6).

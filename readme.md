@@ -18,7 +18,7 @@ One command, one question, answered from the terminal:
 - Graphs can also come out as Mermaid, which GitHub renders in issues, PRs and READMEs, or as DOT.
 - Later runs reuse what an earlier run built, so repeat questions on a large repo don't start over.
 
-Commands (`callers`, `callees` and `find` work now; the rest are planned, M3):
+Commands (`callers`, `callees`, `find` and `state` work now; the rest are planned, M3):
 
 ```sh
 grepo callers Store.Get        # who calls it, interface calls included
@@ -36,7 +36,7 @@ grepo pkg --format mermaid     # the package graph, as a diagram for an issue or
 
 **M2a (paused): incremental store.** `analyze` reuses each unchanged package's share of the graph from a SQLite store in your user cache directory; `--no-cache` skips it. Paused while the commands settle what the store should keep.
 
-**M3 (in progress): commands.** `grepo callers <function>` prints every site that can call a function: direct calls, calls through an interface it implements (`io.Writer` and `error` too), and places it's passed or stored as a func value; `--depth n` follows callers' callers as a tree. `grepo callees <function>` is the other way. `grepo find <word>` lists declarations named like a word, most used first. Commands load the repo from source each time, for now.
+**M3 (in progress): commands.** `grepo callers <function>` prints every site that can call a function: direct calls, calls through an interface it implements (`io.Writer` and `error` too), and places it's passed or stored as a func value; `--depth n` follows callers' callers as a tree. `grepo callees <function>` is the other way. `grepo find <word>` lists declarations named like a word, most used first. `grepo state <struct|field|var>` shows who writes each field or a var, by kind. Commands load the repo from source each time, for now.
 
 ## Usage
 
@@ -52,6 +52,8 @@ grepo callers os.Exit                            # functions outside the repo wo
 grepo callers --depth 3 Store.Get                # callers' callers, indented, 3 levels
 grepo callees --depth 2 --format mermaid main     # a diagram to paste into an issue or PR
 grepo find --kind func,method Load                # don't know the name? most used first
+grepo state Store                                 # who writes each field: counts, a role where they settle one
+grepo state --reads Store.users                   # each write, escape and read of one field
 ```
 
 ```
@@ -126,7 +128,7 @@ Milestone numbers are kept as they were, so references in issues and the docs st
       - targets: a warm run clearly faster than `--no-cache`, filling the store within ~20% of it, a run after an edit never slower
     - when it resumes (measurements on #44): store what queries read (M2b); skip export data far larger than its source (Kubernetes: filling 19.0s → 9.9s, warm 5.5s → 5.1s); try a file per entry without `fsync`, as Go's build cache and gopls do, against SQLite, since flushing export data to disk is most of what filling costs
   - **M2b: query layer**
-    - short names (`Store.users`, `store.Get`) resolved to IDs, with ambiguity handling (functions ✅; vars and fields with `state`)
+    - short names (`Store.users`, `store.Get`) resolved to IDs, with ambiguity handling (functions ✅; types, fields and vars ✅)
     - defaults to the package in the current directory ✅
     - the graph indexed for questions (`internal/query`): names, calls by callee, implementations ✅
     - the store keeps what queries read, per package (names, calls by callee, accesses by target, method sets) plus one entry per repo, so a query reads only the packages that can matter
@@ -143,7 +145,7 @@ Milestone numbers are kept as they were, so references in issues and the docs st
   - grep's exit codes (0 found, 1 none, 2 error) ✅; positions with columns (`path:line:col`), so editors jump to the exact call ✅
   - order: `callers`, `callees`, `find`, `state`, `pkg`, `entry`, `impact`, then `grepo mcp`; each loads from source until the store keeps what they read
   - Working in code:
-    - `state <type|var>`: who writes each field or var, by kind, with a role (config, live state, counter, no writes found)
+    - `state <struct|field|var>`: who writes each field or var, by kind, with a role where the writes settle one (no writes found, set at construction, counter) ✅
     - `callers <func>`: every site that can call it, directly, through an interface it implements or as a func value; functions outside the repo too (`os.Exit`); `--depth n` for a tree of callers' callers, `--format mermaid|dot` to draw it ✅
     - `callees <func>`: every call and func value in it, `--depth n` for a tree expanding interface calls into their implementations, `--format mermaid|dot` to draw it ✅
     - `impact <symbol>`: everything that reaches it through calls and writes, rolled up by package

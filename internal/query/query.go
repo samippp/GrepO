@@ -32,6 +32,14 @@ type Index struct {
 	ifaces   map[string][]graph.Implementation // by interface ID
 	promoted map[string][]graph.Implementation // by the function ID of a method promoted for them
 	vars     []*graph.Variable
+	accesses []graph.Access // the graph's, scanned per query rather than indexed (#72)
+
+	// Types, fields and vars for state: by ID, and by name without local types.
+	fields       map[string]fieldRef
+	varByID      map[string]*graph.Variable
+	typesByName  map[string][]*graph.Type
+	fieldsByName map[string][]fieldRef
+	varsByName   map[string][]*graph.Variable
 
 	// Counts for find, not lists, to keep the Index small (#72).
 	refs        map[string]int // TypeRefs, by type
@@ -62,6 +70,13 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		impls:    map[string][]graph.Implementation{},
 		ifaces:   map[string][]graph.Implementation{},
 		promoted: map[string][]graph.Implementation{},
+
+		accesses:     cg.Accesses,
+		fields:       map[string]fieldRef{},
+		varByID:      map[string]*graph.Variable{},
+		typesByName:  map[string][]*graph.Type{},
+		fieldsByName: map[string][]fieldRef{},
+		varsByName:   map[string][]*graph.Variable{},
 
 		refs:        map[string]int{},
 		methodCount: map[string]int{},
@@ -121,13 +136,28 @@ func New(pg *graph.PackageGraph, cg *graph.CallGraph) *Index {
 		}
 	}
 	for i := range cg.Variables {
-		ix.vars = append(ix.vars, &cg.Variables[i])
+		v := &cg.Variables[i]
+		ix.vars = append(ix.vars, v)
+		ix.varByID[v.ID] = v
+		ix.varsByName[v.Name] = append(ix.varsByName[v.Name], v)
 	}
 	for _, r := range cg.TypeRefs {
 		ix.refs[r.Type]++
 	}
 	for i := range cg.Types {
-		ix.types[cg.Types[i].ID] = &cg.Types[i]
+		t := &cg.Types[i]
+		ix.types[t.ID] = t
+		local := strings.Contains(t.ID, "#")
+		if !local {
+			ix.typesByName[t.Name] = append(ix.typesByName[t.Name], t)
+		}
+		for j := range t.Fields {
+			r := fieldRef{t, &t.Fields[j]}
+			ix.fields[r.field.ID] = r
+			if !local {
+				ix.fieldsByName[r.field.Name] = append(ix.fieldsByName[r.field.Name], r)
+			}
+		}
 	}
 	for _, im := range cg.Implementations {
 		ix.impls[im.Type] = append(ix.impls[im.Type], im)
@@ -170,20 +200,32 @@ func (ix *Index) Decl(id string) string {
 	return f.ID
 }
 
-// NotFoundError is a name no function has, in the repo or called from it.
-type NotFoundError struct{ Name, Module string }
+// NotFoundError is a name nothing has: no function in the repo or called
+// from it, or for state, no type, field or var in the repo.
+type NotFoundError struct {
+	Name, Module string
+	State        bool // from Target
+}
 
 func (e *NotFoundError) Error() string {
+	if e.State {
+		return fmt.Sprintf("no type, field or package var named %s in %s", e.Name, e.Module)
+	}
 	return fmt.Sprintf("no function or method named %s in %s or called from it", e.Name, e.Module)
 }
 
-// AmbiguousError is a name several functions have.
+// AmbiguousError is a name several functions have, or for Target, several
+// types, fields or vars.
 type AmbiguousError struct {
 	Name       string
 	Candidates []*graph.Function // sorted by ID
+	Targets    []Target          // from Target, sorted by ID
 }
 
 func (e *AmbiguousError) Error() string {
+	if e.Targets != nil {
+		return fmt.Sprintf("%s is ambiguous: %d declarations match", e.Name, len(e.Targets))
+	}
 	return fmt.Sprintf("%s is ambiguous: %d functions match", e.Name, len(e.Candidates))
 }
 
@@ -212,16 +254,8 @@ func (ix *Index) Func(name, prefer string) (*graph.Function, error) {
 	case 1:
 		return matches[0], nil
 	}
-	if prefer != "" {
-		var in []*graph.Function
-		for _, f := range matches {
-			if f.Package == prefer {
-				in = append(in, f)
-			}
-		}
-		if len(in) == 1 {
-			return in[0], nil
-		}
+	if f, ok := only(matches, func(f *graph.Function) bool { return f.Package == prefer }); ok {
+		return f, nil
 	}
 	slices.SortFunc(matches, func(a, b *graph.Function) int { return cmp.Compare(a.ID, b.ID) })
 	return nil, &AmbiguousError{Name: name, Candidates: matches}
@@ -231,29 +265,42 @@ func (ix *Index) Func(name, prefer string) (*graph.Function, error) {
 func (ix *Index) matching(fs []*graph.Function, qual string) []*graph.Function {
 	var out []*graph.Function
 	for _, f := range fs {
-		if ix.qualifies(f, qual) {
+		if ix.qualifies(f.Owner, f.Package, qual) {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-// qualifies reports whether qual, the part of a name before the function's
-// own, fits f: its type for a method, its package, or both.
-func (ix *Index) qualifies(f *graph.Function, qual string) bool {
+// only is the one x in xs that keep is true of, if there's one.
+func only[T any](xs []T, keep func(T) bool) (T, bool) {
+	var found T
+	n := 0
+	for _, x := range xs {
+		if keep(x) {
+			found = x
+			n++
+		}
+	}
+	return found, n == 1
+}
+
+// qualifies reports whether qual, the part of a name before the declaration's
+// own, fits it: its owner type (a method's or a field's), its package, or both.
+func (ix *Index) qualifies(owner, pkg, qual string) bool {
 	if qual == "" {
 		return true
 	}
-	if f.Owner == "" {
-		return ix.isPackage(qual, f.Package)
+	if owner == "" {
+		return ix.isPackage(qual, pkg)
 	}
-	owner := stripTypeArgs(f.Owner)
+	owner = stripTypeArgs(owner)
 	typeName := owner[strings.LastIndex(owner, ".")+1:]
 	if qual == typeName {
 		return true
 	}
 	i := strings.LastIndex(qual, ".")
-	return i >= 0 && qual[i+1:] == typeName && ix.isPackage(qual[:i], f.Package)
+	return i >= 0 && qual[i+1:] == typeName && ix.isPackage(qual[:i], pkg)
 }
 
 // isPackage reports whether q names the package at path: the path, the
